@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.so
+*.dylib
+
+.live_session/
+logs/
+build/
+temp/
+cuda_extension.so
+.shell_policy.json
