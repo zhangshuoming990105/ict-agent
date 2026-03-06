@@ -159,7 +159,7 @@ cmd_start() {
     ICT_AGENT_SESSION_ID="${SESSION_ID}" \
     ICT_AGENT_SESSION_TTL="${TTL}" \
     PYTHONUNBUFFERED=1 stdbuf -oL -eL \
-      python -u main.py "$@" < "${FIFO_PATH}" > >(tee -a "${LOG_PATH}") 2>&1 &
+      python -u main.py "$@" < "${FIFO_PATH}" > >(tee -a "${LOG_PATH}" > /dev/null) 2>&1 &
     py_pid=$!
     echo "${py_pid}" > "${PID_PATH}"
     wait "${py_pid}"

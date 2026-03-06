@@ -8,7 +8,7 @@ class DummyLogger:
     def __init__(self):
         self.lines = []
 
-    def log(self, msg=""):
+    def log(self, msg="", **kwargs):
         self.lines.append(msg)
 
 

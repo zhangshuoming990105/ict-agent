@@ -96,7 +96,8 @@ def do_compact(
     droppable = len(ctx.messages) - 1 - keep_recent
     if droppable < 4:
         logger.log(
-            f"  Not enough old messages to compact ({len(ctx.messages) - 1} total, need >{keep_recent + 3}).\n"
+            f"  Not enough old messages to compact ({len(ctx.messages) - 1} total, need >{keep_recent + 3}).\n",
+            level="system",
         )
         return
     active_client = compact_client if compact_client is not None else client
@@ -104,22 +105,23 @@ def do_compact(
     before = ctx.get_context_tokens(overhead_tokens=current_overhead_tokens)
     before_local = ctx.estimate_messages_tokens_structured()
     old_messages = ctx.messages[1:-keep_recent]
-    logger.log(f"  Compacting {len(old_messages)} old messages (level={level}, model={active_model})...")
+    logger.log(f"  Compacting {len(old_messages)} old messages (level={level}, model={active_model})...", level="system")
     compacted = compact_messages(active_client, active_model, old_messages, level=level)
     if not compacted:
-        logger.log("  Compaction failed - context unchanged.\n")
+        logger.log("  Compaction failed - context unchanged.\n", level="error")
         return
     candidate_local = ctx.estimate_messages_tokens_structured(
         [ctx.messages[0]] + compacted + ctx.messages[-keep_recent:]
     )
     if candidate_local >= before_local:
-        logger.log("  Compacted version is not smaller - skipped.\n")
+        logger.log("  Compacted version is not smaller - skipped.\n", level="system")
         return
     replaced, new_count = ctx.apply_compacted_messages(compacted, keep_recent)
     after = ctx.get_context_tokens(overhead_tokens=current_overhead_tokens)
     logger.log(
         f"  Compressed {replaced} old messages -> {new_count} summary message(s) "
-        f"(+ {keep_recent} recent kept). Context: ~{before:,} -> ~{after:,} tokens\n"
+        f"(+ {keep_recent} recent kept). Context: ~{before:,} -> ~{after:,} tokens\n",
+        level="success",
     )
 
 
@@ -188,7 +190,8 @@ def handle_common_command(command: str, cmd_ctx) -> bool:
         runtime_state["model"] = new_model
         logger.log(
             f"\nModel switched: {old_model} -> {new_model}\n"
-            "Conversation history is preserved; new model will see all previous context.\n"
+            "Conversation history is preserved; new model will see all previous context.\n",
+            level="success",
         )
         return True
     if cmd.startswith("/compact"):
@@ -197,7 +200,7 @@ def handle_common_command(command: str, cmd_ctx) -> bool:
         if len(parts) >= 2:
             arg = parts[1].lower()
             if arg not in ("low", "high"):
-                logger.log("\nUsage: /compact [low|high]  (default: low)\n")
+                logger.log("\nUsage: /compact [low|high]  (default: low)\n", level="error")
                 return True
             level = arg
         overhead_tokens = estimate_schema_tokens(
@@ -230,16 +233,16 @@ def handle_common_command(command: str, cmd_ctx) -> bool:
             return True
         _, name, mode = parts
         if name not in runtime_state["skills"]:
-            logger.log(f"\nUnknown skill: {name}\n")
+            logger.log(f"\nUnknown skill: {name}\n", level="error")
             return True
         if mode == "on":
             runtime_state["pinned_skills"].add(name)
-            logger.log(f"\nPinned skill: {name}\n")
+            logger.log(f"\nPinned skill: {name}\n", level="success")
         elif mode == "off":
             runtime_state["pinned_skills"].discard(name)
-            logger.log(f"\nUnpinned skill: {name}\n")
+            logger.log(f"\nUnpinned skill: {name}\n", level="success")
         else:
-            logger.log("\nUsage: /skill <name> on|off\n")
+            logger.log("\nUsage: /skill <name> on|off\n", level="error")
         return True
     if cmd.startswith("/verbose"):
         parts = cmd.split()

@@ -6,17 +6,36 @@
 - 如何验证 provider / model 切换
 - 如何在切模型后检查上下文是否仍然保留
 
+## 两种调试方式
+
+### 方式一：原子式 live_session 发信息（推荐用于多 session 调试）
+
+**特点**：每次手动 `send` 一条消息，用 `tail -f` 实时看输出，完全掌控节奏。适合调试多 session 间交互、agent-to-agent 驱动等场景。
+
+流程：
+
+1. 重置现场
+2. 启动 session（可并行启动多个不同 `--session-id`）
+3. 另开终端 `tail -f .live_session/session_<id>/stdout.log`
+4. 原子地发消息：`bash scripts/live_session.sh send "..."`，等 `>>> Ready for input.` 再发下一条
+5. 用 `/tokens`、`/debug`、`/model` 检查状态
+
+### 方式二：消息文件批量跑（run_observed_session）
+
+**特点**：把要发的消息写进文件，一条条自动发送并等待 ready，适合回归测试、长流程验证（如 10 轮问答 + 切模型 + 验证上下文）。
+
+流程：
+
+1. 重置现场
+2. 准备消息文件，每行一条消息，例如 `scripts/debug_test_messages.txt`
+3. 运行：`WAIT_TIMEOUT=300 bash scripts/run_observed_session.sh --messages-file scripts/debug_test_messages.txt -- --model mcs-1`
+4. 脚本会逐条发送、等待 `>>> Ready for input.`、流式打印 log
+
+示例消息文件内容可包含：工具调用请求、多轮问答、`/model xxx` 切模型、最后验证上下文的追问。
+
 ## 基本原则
 
 调试 `ict-agent` 时，**优先使用已经搭好的 live session 机制**，不要默认自己重新发明一个临时 REPL。
-
-推荐流程：
-
-1. 先重置现场
-2. 启动一个 live session
-3. 通过 `send` 逐轮发消息
-4. 观察 `.live_session/session_<id>/stdout.log`
-5. 用 `/tokens`、`/debug`、`/model` 等命令检查状态
 
 注意：
 

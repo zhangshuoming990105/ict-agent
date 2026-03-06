@@ -204,14 +204,14 @@ def process_tool_calls(response, ctx: ContextManager, logger) -> ToolExecutionOu
         args = tool_call.function.arguments
         if not name:
             result = "Error: empty tool name returned by model."
-            logger.log(f"  <- Result: {result}")
+            logger.log(f"  <- Result: {result}", level="result")
             ctx.add_tool_result(tool_call.id, "unknown", result)
             failures.append("unknown: empty tool name")
             continue
-        logger.log(f"  -> Calling tool: {name}({args})")
+        logger.log(f"  -> Calling tool: {name}({args})", level="tool")
         result = execute_tool(name, args)
         display = result if len(result) <= 2000 else result[:1000] + "\n...(truncated)...\n" + result[-500:]
-        logger.log(f"  <- Result: {display}")
+        logger.log(f"  <- Result: {display}", level="result")
         ctx.add_tool_result(tool_call.id, name, result)
         if is_tool_failure(name, result):
             failures.append(summarize_failure(name, result))
@@ -296,7 +296,9 @@ def chat(
                 pending_input = None
             else:
                 logger.log(">>> Ready for input.")
+                logger.print_user_prompt()
                 event, text = dequeue_user_input_blocking(user_queue)
+                logger.reset_style()
                 if event in ("eof", "interrupt"):
                     logger.log("\nBye!")
                     break
@@ -304,9 +306,9 @@ def chat(
 
             if not user_input:
                 continue
-            logger.log(f"You: {user_input}")
+            logger.log(f"You: {user_input}", level="user")
             if user_input.lower() in ("quit", "exit", "q"):
-                logger.log("Bye!")
+                logger.log("Bye!", level="info")
                 break
             normalized_command = normalize_command_input(user_input)
             if normalized_command.startswith("/"):
@@ -321,7 +323,7 @@ def chat(
                     ),
                 )
                 if not handled:
-                    logger.log("\nUnknown command. Type /help.\n")
+                    logger.log("\nUnknown command. Type /help.\n", level="error")
                 continue
 
             turn_start_index = len(ctx.messages)
@@ -337,11 +339,11 @@ def chat(
             runtime_state["active_skill_prompt"] = active_skill_prompt
 
             if selected_skill_names:
-                logger.log(f"  [skills] active: {', '.join(selected_skill_names)}")
+                logger.log(f"  [skills] active: {', '.join(selected_skill_names)}", level="debug")
 
             overhead_tokens = ctx.estimate_tokens(str(active_tool_schemas)) + ctx.estimate_tokens(active_skill_prompt)
             if ctx.needs_compaction(overhead_tokens=overhead_tokens):
-                logger.log("  (Context approaching limit, auto-compacting...)")
+                logger.log("  (Context approaching limit, auto-compacting...)", level="system")
                 do_compact(
                     client,
                     runtime_state["model"],
@@ -353,7 +355,8 @@ def chat(
                     compact_model=compact_model,
                 )
 
-            likely_action_intent = has_action_intent(user_input)
+            # Autonomy suppression disabled; multiagent will handle orchestration.
+            likely_action_intent = False
             autonomy_nudge = ""
             did_call_tool = False
             recovery = RecoveryState()
@@ -376,7 +379,8 @@ def chat(
                                 "Received terminal interrupt signal; finishing current turn."
                                 if pending_input == "quit"
                                 else "Received user input during autonomous loop; switching turns."
-                            )
+                            ),
+                            level="system",
                         )
                         break
 
@@ -413,7 +417,8 @@ def chat(
                                         if pending_input == "quit"
                                         else "Queued new input while waiting model response; "
                                         "will switch turns after the current response."
-                                    )
+                                    ),
+                                    level="system",
                                 )
                     if async_call.error is not None:
                         raise async_call.error
@@ -429,7 +434,8 @@ def chat(
                             recovery.record_failures(tool_outcome.failures, tool_outcome.failure_kinds)
                             logger.log(
                                 f"  [recovery] Detected failure ({recovery.last_failure_kind}): "
-                                f"{tool_outcome.failures[-1]}"
+                                f"{tool_outcome.failures[-1]}",
+                                level="system",
                             )
                             autonomy_nudge = build_recovery_nudge(recovery)
                         else:
@@ -441,35 +447,36 @@ def chat(
                     should_continue = False
                     if likely_action_intent and step_idx < max_agent_steps - 1:
                         if not did_call_tool:
-                            logger.log("  [autonomy] Suppressed no-tool reply; continuing...")
+                            logger.log("  [autonomy] Suppressed no-tool reply; continuing...", level="system")
                             autonomy_nudge = AUTONOMY_NUDGE_TEXT
                             should_continue = True
                         elif recovery.unresolved_failure:
-                            logger.log("  [recovery] Suppressed unresolved-failure reply; continuing...")
+                            logger.log("  [recovery] Suppressed unresolved-failure reply; continuing...", level="system")
                             autonomy_nudge = build_recovery_nudge(recovery)
                             should_continue = True
                         elif is_procedural_confirmation(content):
-                            logger.log("  [autonomy] Suppressed procedural-confirmation reply; continuing...")
+                            logger.log("  [autonomy] Suppressed procedural-confirmation reply; continuing...", level="system")
                             autonomy_nudge = AUTONOMY_NUDGE_TEXT
                             should_continue = True
                     if should_continue:
                         continue
 
                     ctx.add_assistant_message(content)
-                    logger.log(f"\nAssistant [{response_model}]: {content}")
-                    logger.log(f"  {format_turn_usage(response.usage)}\n")
+                    logger.log(f"\nAssistant [{response_model}]: {content}", level="assistant")
+                    logger.log(f"  {format_turn_usage(response.usage)}\n", level="info")
                     if runtime_state.get("recovery_cleanup", True) and recovery.had_failure:
                         removed = ctx.drop_failed_tool_messages(start_index=turn_start_index + 1)
                         if removed > 0:
                             logger.log(
-                                f"  [recovery] Cleaned {removed} failed intermediate messages from context.\n"
+                                f"  [recovery] Cleaned {removed} failed intermediate messages from context.\n",
+                                level="system",
                             )
                     domain_adapter.try_save_history(content, ctx, logger)
                     if queued_input_while_waiting:
-                        logger.log("  [preempt] Current response delivered; switching to queued input.\n")
+                        logger.log("  [preempt] Current response delivered; switching to queued input.\n", level="system")
                     break
                 except Exception as exc:
-                    logger.log(f"\nError: {exc}\n")
+                    logger.log(f"\nError: {exc}\n", level="error")
                     ctx.pop_last_message()
                     break
             else:
@@ -480,7 +487,7 @@ def chat(
                 if recovery.failures:
                     help_msg += f" Latest failure: {recovery.failures[-1]}"
                 ctx.add_assistant_message(help_msg)
-                logger.log(f"\nAssistant: {help_msg}\n")
+                logger.log(f"\nAssistant: {help_msg}\n", level="assistant")
 
             set_autonomous_turn(False)
             clear_preempt_request()
