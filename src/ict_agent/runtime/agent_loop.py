@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from queue import Queue
+from queue import Empty, Queue
 import re
 import threading
 from pathlib import Path
@@ -27,9 +27,12 @@ from ict_agent.runtime.session import (
     InputReaderThread,
     dequeue_user_input_blocking,
     dequeue_user_input_nowait,
+    dequeue_user_input_with_timeout,
     to_pending_input_from_preempt_event,
 )
+from ict_agent.runtime.current_context import get_current_runtime, set_current_runtime
 from ict_agent.skills import build_skill_prompt, load_skills, select_skills
+from ict_agent.skills import SkillSpec
 from ict_agent.tools import execute_tool, get_all_tool_schemas, get_tool_schema_map, set_shell_safety
 
 
@@ -219,6 +222,227 @@ def process_tool_calls(response, ctx: ContextManager, logger) -> ToolExecutionOu
     return ToolExecutionOutcome(called=True, failures=failures, failure_kinds=failure_kinds)
 
 
+class _ForkLogger:
+    """Wraps a logger to prefix all log lines with [fork:skill_name] for sub-agent output."""
+
+    def __init__(self, logger, prefix: str):
+        self._logger = logger
+        self._prefix = prefix
+
+    def log(self, msg: str, level: str = "info") -> None:
+        self._logger.log(f"{self._prefix} {msg}", level=level)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._logger, name)
+
+
+def _serialize_fork_context(messages: list[dict]) -> str:
+    """Serialize fork ctx.messages into one string for return_mode=full_context."""
+    parts = []
+    for m in messages:
+        role = m.get("role", "")
+        content = (m.get("content") or "").strip()
+        if role == "system":
+            parts.append(f"--- system ---\n{content}")
+        elif role == "user":
+            parts.append(f"--- user ---\n{content}")
+        elif role == "assistant":
+            tool_calls = m.get("tool_calls")
+            if tool_calls:
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    parts.append(f"--- assistant (tool_call: {fn.get('name', '')}) ---\n{fn.get('arguments', '')}")
+            if content:
+                parts.append(f"--- assistant ---\n{content}")
+        elif role == "tool":
+            name = m.get("name", "")
+            parts.append(f"--- tool ({name}) ---\n{content}")
+    return "\n\n".join(parts)
+
+
+def run_fork_skill(
+    client: "OpenAI",
+    model: str,
+    skill: SkillSpec,
+    task: str,
+    tool_schema_map: dict[str, dict],
+    all_tool_schemas: list[dict],
+    logger: Any,
+    max_steps: int = 20,
+    max_tokens: int = 128_000,
+    return_mode: str = "final",
+) -> str:
+    """Run a fork (Agent as Skill) sub-agent: isolated context, skill's tools only, single task.
+
+    return_mode: "final" = return only the last assistant reply (default; saves main context).
+                 "full_context" = return entire subagent conversation as one blob (for handoff).
+    Returns the final assistant message content, or full context string, or an error message.
+    """
+    fork_log = _ForkLogger(logger, f"[fork:{skill.name}]")
+    fork_log.log(f"Starting fork task: {task[:200]}{'...' if len(task) > 200 else ''}", level="system")
+    ctx = ContextManager(system_prompt=skill.instructions or "Complete the user's task.", max_tokens=max_tokens)
+    ctx.add_user_message(task)
+    active_tool_schemas = resolve_active_tool_schemas([skill], tool_schema_map, all_tool_schemas)
+    if not active_tool_schemas:
+        return "Error: fork skill has no tools available (check skill's tools list and tool registry)."
+
+    last_content = ""
+    for step_idx in range(max_steps):
+        try:
+            request_messages = list(ctx.messages)
+            async_call = start_async_model_call(
+                client=client,
+                model=model,
+                request_messages=request_messages,
+                active_tool_schemas=active_tool_schemas,
+            )
+            async_call.done.wait(timeout=300)
+            if async_call.error is not None:
+                raise async_call.error
+            if async_call.response is None:
+                raise RuntimeError("Model call ended without response.")
+            response = async_call.response
+            ctx.record_usage(response.usage, overhead_tokens=0)
+
+            tool_outcome = process_tool_calls(response, ctx, fork_log)
+            if tool_outcome.called:
+                continue
+
+            content = (response.choices[0].message.content or "").strip()
+            last_content = content
+            ctx.add_assistant_message(content)
+            fork_log.log(f"Completed in {step_idx + 1} step(s).", level="system")
+            fork_log.log(content[:500] + ("..." if len(content) > 500 else ""), level="assistant")
+            if return_mode == "full_context":
+                return _serialize_fork_context(ctx.messages)
+            return content
+        except Exception as exc:
+            err_msg = f"Error in fork step {step_idx + 1}: {exc}"
+            fork_log.log(err_msg, level="error")
+            return err_msg
+
+    msg = (
+        f"Fork reached max steps ({max_steps}) without final reply. "
+        + (f"Last content: {last_content[:300]}..." if len(last_content) > 300 else f"Last content: {last_content}")
+    )
+    fork_log.log(msg, level="error")
+    if return_mode == "full_context":
+        return _serialize_fork_context(ctx.messages)
+    return msg
+
+
+def _run_fork_in_thread(
+    job_id: str,
+    skill: SkillSpec,
+    task: str,
+    client: "OpenAI",
+    model: str,
+    tool_schema_map: dict[str, dict],
+    all_tool_schemas: list[dict],
+    logger: Any,
+    result_queue: "Queue[tuple[str, str, str]]",
+    return_mode: str = "final",
+) -> None:
+    """Background thread: run run_fork_skill and put (job_id, skill_name, result) into result_queue."""
+    try:
+        result = run_fork_skill(
+            client=client,
+            model=model,
+            skill=skill,
+            task=task,
+            tool_schema_map=tool_schema_map,
+            all_tool_schemas=all_tool_schemas,
+            logger=logger,
+            return_mode=return_mode,
+        )
+        result_queue.put((job_id, skill.name, result))
+    except Exception as exc:
+        result_queue.put((job_id, skill.name, f"Error: {exc}"))
+
+
+def drain_fork_results(
+    ctx: ContextManager,
+    runtime_state: dict,
+    *,
+    inject_into_ctx: bool = True,
+) -> None:
+    """Drain fork_result_queue into fork_results dict; optionally inject assistant messages with [subagent xxx] into ctx.
+    When called from get_subagent_result (mid-turn), use inject_into_ctx=False to avoid breaking tool_use/tool_result ordering."""
+    queue = runtime_state.get("fork_result_queue")
+    if not queue:
+        return
+    results = runtime_state.setdefault("fork_results", {})
+    while True:
+        try:
+            job_id, skill_name, result = queue.get_nowait()
+        except Empty:
+            break
+        results[job_id] = result
+        if inject_into_ctx:
+            ctx.add_assistant_message(f"[subagent {skill_name} job_id={job_id}] {result}")
+
+
+def start_async_fork(
+    runtime_state: dict,
+    client: "OpenAI",
+    model: str,
+    skill: SkillSpec,
+    task: str,
+    logger: Any,
+    return_mode: str = "final",
+) -> str:
+    """Start run_fork_skill in a background thread; return job_id.
+    return_mode: 'final' = only last reply (default); 'full_context' = entire subagent conversation."""
+    result_queue = runtime_state.get("fork_result_queue")
+    if not result_queue:
+        return "Error: no fork_result_queue in runtime state."
+    counter = runtime_state.get("fork_job_counter", 0)
+    runtime_state["fork_job_counter"] = counter + 1
+    job_id = str(counter + 1)
+    tool_schema_map = get_tool_schema_map()
+    all_tool_schemas = get_all_tool_schemas()
+    thread = threading.Thread(
+        target=_run_fork_in_thread,
+        args=(job_id, skill, task, client, model, tool_schema_map, all_tool_schemas, logger, result_queue, return_mode),
+        daemon=True,
+    )
+    threads = runtime_state.setdefault("fork_threads", [])
+    threads.append({"job_id": job_id, "skill_name": skill.name, "thread": thread})
+    thread.start()
+    return job_id
+
+
+def _prune_fork_threads(runtime_state: dict) -> list[dict]:
+    """Remove finished threads from fork_threads; return list of still-alive entries {job_id, skill_name, thread}."""
+    threads = runtime_state.get("fork_threads") or []
+    alive = [t for t in threads if t["thread"].is_alive()]
+    runtime_state["fork_threads"] = alive
+    return alive
+
+
+def get_fork_threads_status(runtime_state: dict) -> list[dict]:
+    """Return list of still-running fork jobs: [{"job_id": "1", "skill_name": "scout"}, ...]. Prunes finished threads."""
+    alive = _prune_fork_threads(runtime_state)
+    return [{"job_id": t["job_id"], "skill_name": t["skill_name"]} for t in alive]
+
+
+def wait_for_fork_threads(runtime_state: dict, timeout_sec: float = 60.0) -> bool:
+    """Wait for all fork threads to finish. Returns True if all ended within timeout, False if some still alive."""
+    import time as _time
+    alive = _prune_fork_threads(runtime_state)
+    if not alive:
+        return True
+    deadline = _time.monotonic() + timeout_sec
+    n = len(alive)
+    for t in alive:
+        remaining = max(0.0, deadline - _time.monotonic())
+        if remaining <= 0:
+            break
+        t["thread"].join(timeout=min(remaining, max(0.1, timeout_sec / n)))
+    _prune_fork_threads(runtime_state)
+    return len(runtime_state.get("fork_threads") or []) == 0
+
+
 def chat(
     client: "OpenAI",
     model: str,
@@ -263,6 +487,10 @@ def chat(
         "compact_client": compact_client,
         "compact_model": compact_model,
         "model": model,
+        "fork_result_queue": Queue(),
+        "fork_job_counter": 0,
+        "fork_results": {},
+        "fork_threads": [],
     }
 
     logger.log("ICT Agent ready.")
@@ -297,12 +525,31 @@ def chat(
             else:
                 logger.log(">>> Ready for input.")
                 logger.print_user_prompt()
-                event, text = dequeue_user_input_blocking(user_queue)
+                # Poll with short timeout so we can drain fork results and print them while waiting
+                event, user_input = None, None
+                while True:
+                    item = dequeue_user_input_with_timeout(user_queue, timeout=1.0)
+                    if item is None:
+                        # No input; drain any completed fork results, inject into ctx, and print to terminal
+                        n_before = len(ctx.messages)
+                        drain_fork_results(ctx, runtime_state)
+                        for msg in ctx.messages[n_before:]:
+                            if msg.get("role") == "assistant":
+                                content = (msg.get("content") or "").strip()
+                                if content.startswith("[subagent "):
+                                    logger.log("\n[Subagent result]\n" + content + "\n", level="info")
+                        continue
+                    event, user_input = item
+                    if event in ("eof", "interrupt"):
+                        break
+                    if event == "input" and user_input:
+                        break
+                    # empty line, keep waiting
+                    continue
                 logger.reset_style()
                 if event in ("eof", "interrupt"):
                     logger.log("\nBye!")
                     break
-                user_input = text
 
             if not user_input:
                 continue
@@ -326,6 +573,8 @@ def chat(
                     logger.log("\nUnknown command. Type /help.\n", level="error")
                 continue
 
+            drain_fork_results(ctx, runtime_state)
+            set_current_runtime(ctx=ctx, runtime_state=runtime_state, client=client, logger=logger)
             turn_start_index = len(ctx.messages)
             ctx.add_user_message(user_input)
 
@@ -333,6 +582,11 @@ def chat(
             maybe_extend_skills_for_continuation(user_input, selected_skills, runtime_state)
             selected_skill_names = [skill.name for skill in selected_skills]
             active_tool_schemas = resolve_active_tool_schemas(selected_skills, tool_schema_map, all_tool_schemas)
+            for fork_tool_name in ("fork_subagent", "get_subagent_result"):
+                if fork_tool_name in tool_schema_map and not any(
+                    t.get("function", {}).get("name") == fork_tool_name for t in active_tool_schemas
+                ):
+                    active_tool_schemas = active_tool_schemas + [tool_schema_map[fork_tool_name]]
             active_skill_prompt = build_skill_prompt(selected_skills)
             runtime_state["active_skill_names"] = selected_skill_names
             runtime_state["active_tool_schemas"] = active_tool_schemas

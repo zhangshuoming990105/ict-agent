@@ -114,3 +114,24 @@ Note:
 
 - `scripts/reset_live_session.sh` resets only the live-session runtime state
 - `scripts/clean_logs.sh` is the separate command for clearing persistent logs
+
+## Fork skills (Agent as Skill)
+
+Skills with `context: fork` in their frontmatter run as **subagents**: isolated context, dedicated tools, single task, result returned to the main conversation.
+
+- **User commands**
+  - `/run <skill> <task>` — run a fork skill **synchronously**; the result is injected when the subagent finishes.
+  - `/fork <skill> <task>` — start a fork skill **asynchronously**; the result is injected at the start of the next turn (so you can start several in parallel).
+- **Agent tools** (main agent can call these during a turn)
+  - `fork_subagent(skill_name, task)` — start a subagent in the background; returns a `job_id`. Use for parallel tasks (e.g. run scout on path A and path B).
+  - `get_subagent_result(job_id, timeout_sec)` — wait for a subagent result by `job_id` (optional; results are also auto-injected next turn).
+- **Parallel usage**: Start multiple forks (via `/fork` or `fork_subagent`); completed results are drained into the conversation at the start of each new turn, or you can call `get_subagent_result` to wait within the same turn.
+
+### Multi-fork QA test (2, 4, 8, 16 subagents)
+
+16 questions are split across 2, 4, 8, or 16 subagents (qa fork skill) to verify the fork system scales and no threads are left behind.
+
+**Recommended: run manually first.** See **`docs/multi_fork_test_manual.md`** for the exact prompts to type (and in what order). Once that flow works for you, the same steps can be codified into `scripts/run_multi_fork_test.py`.
+
+- Questions: `tests/data/fork_quiz_questions.py`
+- QA skill: `skills/qa/` (calculator + get_current_time)

@@ -48,6 +48,22 @@ class InputReaderThread(threading.Thread):
                 request_preempt()
 
 
+def dequeue_user_input_with_timeout(
+    user_queue: Queue[tuple[str, str]],
+    timeout: float,
+) -> tuple[str, str] | None:
+    """Get one item from queue with timeout. Returns (event, text) or None on timeout. Used for polling while draining fork results."""
+    try:
+        event, text = user_queue.get(timeout=timeout)
+    except Empty:
+        return None
+    if event != QUEUE_EVENT_INPUT:
+        return event, text
+    if text.strip():
+        return event, text.strip()
+    return event, ""  # empty line
+
+
 def dequeue_user_input_blocking(user_queue: Queue[tuple[str, str]]) -> tuple[str, str]:
     while True:
         event, text = user_queue.get()

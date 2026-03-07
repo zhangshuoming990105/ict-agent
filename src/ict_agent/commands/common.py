@@ -6,7 +6,12 @@ import json
 
 from ict_agent.compactor import compact_messages
 from ict_agent.context import ContextManager
-from ict_agent.tools import get_shell_policy_snapshot, set_shell_safety
+from ict_agent.tools import (
+    get_all_tool_schemas,
+    get_shell_policy_snapshot,
+    get_tool_schema_map,
+    set_shell_safety,
+)
 
 
 def format_turn_usage(usage) -> str:
@@ -135,6 +140,10 @@ SLASH_COMMANDS_HELP = """Available commands:
   /compact [low|high] - Smart context compaction
   /skills       - Show loaded skills and currently active skills
   /skill <name> on|off - Pin or unpin a skill
+  /run <skill> <task> - Run a fork skill synchronously; result injected when done
+  /fork <skill> [full_context] <task> - Start fork; optional full_context returns entire subagent log
+  /fork-status   - Show whether any fork subagent threads are still running
+  /fork-wait [sec] - Wait for all fork subagents to finish (default 60s)
   /verbose      - Show or set verbose token diagnostics: /verbose on|off
   /shell-safe   - Toggle safe shell mode: /shell-safe on|off
   /shell-policy - Show current shell allowlist/denylist
@@ -243,6 +252,126 @@ def handle_common_command(command: str, cmd_ctx) -> bool:
             logger.log(f"\nUnpinned skill: {name}\n", level="success")
         else:
             logger.log("\nUsage: /skill <name> on|off\n", level="error")
+        return True
+    if command.strip().lower().startswith("/run "):
+        rest = command.strip()[len("/run ") :].strip()
+        if not rest:
+            logger.log("\nUsage: /run <skill-name> <task>\n", level="error")
+            return True
+        parts = rest.split(None, 1)
+        skill_name = parts[0].strip()
+        task = parts[1].strip() if len(parts) > 1 else ""
+        if not task:
+            logger.log("\nUsage: /run <skill-name> <task>  (task cannot be empty)\n", level="error")
+            return True
+        skills = runtime_state.get("skills", {})
+        if skill_name not in skills:
+            logger.log(f"\nUnknown skill: {skill_name}. Use /skills to list.\n", level="error")
+            return True
+        skill = skills[skill_name]
+        if skill.context_mode != "fork":
+            logger.log(
+                f"\nSkill '{skill_name}' is not a fork skill (context: fork). Only fork skills can be run with /run.\n",
+                level="error",
+            )
+            return True
+        tool_schema_map = get_tool_schema_map()
+        all_tool_schemas = get_all_tool_schemas()
+        client = cmd_ctx.client
+        model = runtime_state.get("model", "")
+        if not model:
+            logger.log("\nNo model set in runtime state.\n", level="error")
+            return True
+        from ict_agent.runtime.agent_loop import run_fork_skill
+
+        logger.log(f"\nRunning fork skill '{skill_name}' with task: {task[:100]}{'...' if len(task) > 100 else ''}\n")
+        result = run_fork_skill(
+            client=client,
+            model=model,
+            skill=skill,
+            task=task,
+            tool_schema_map=tool_schema_map,
+            all_tool_schemas=all_tool_schemas,
+            logger=logger,
+        )
+        # Preserve user's command in context; subagent result as assistant with [subagent xxx job_id=0] (sync)
+        ctx.add_user_message(command)
+        ctx.add_assistant_message(f"[subagent {skill_name} job_id=0] {result}")
+        logger.log(f"\nFork result injected into conversation. Next turn the assistant will see it.\n", level="success")
+        return True
+    if command.strip().lower().startswith("/fork "):
+        rest = command.strip()[len("/fork ") :].strip()
+        if not rest:
+            logger.log("\nUsage: /fork <skill-name> [full_context] <task>\n", level="error")
+            return True
+        parts = rest.split(None, 1)
+        skill_name = parts[0].strip()
+        remainder = parts[1].strip() if len(parts) > 1 else ""
+        if not remainder:
+            logger.log("\nUsage: /fork <skill-name> [full_context] <task>  (task cannot be empty)\n", level="error")
+            return True
+        return_mode = "final"
+        if remainder.lower().startswith("full_context "):
+            return_mode = "full_context"
+            task = remainder[len("full_context ") :].strip()
+        else:
+            task = remainder
+        if not task:
+            logger.log("\nUsage: /fork <skill-name> [full_context] <task>  (task cannot be empty)\n", level="error")
+            return True
+        skills = runtime_state.get("skills", {})
+        if skill_name not in skills:
+            logger.log(f"\nUnknown skill: {skill_name}. Use /skills to list.\n", level="error")
+            return True
+        skill = skills[skill_name]
+        if skill.context_mode != "fork":
+            logger.log(
+                f"\nSkill '{skill_name}' is not a fork skill (context: fork). Only fork skills can be run with /fork.\n",
+                level="error",
+            )
+            return True
+        client = cmd_ctx.client
+        model = runtime_state.get("model", "")
+        if not model:
+            logger.log("\nNo model set in runtime state.\n", level="error")
+            return True
+        from ict_agent.runtime.agent_loop import start_async_fork
+
+        job_id = start_async_fork(runtime_state, client, model, skill, task, logger, return_mode=return_mode)
+        task_preview = task[:80] + "..." if len(task) > 80 else task
+        # Preserve user's command; record system flow so context shows what happened
+        ctx.add_user_message(command)
+        ctx.add_assistant_message(
+            f"[system] Async fork started job_id={job_id} for skill {skill_name} (task: {task_preview}). "
+            "Result will appear as [subagent ...] when ready."
+        )
+        logger.log(f"\nAsync fork started job_id={job_id}. Result will be injected next turn.\n", level="success")
+        return True
+    if cmd.strip().lower() == "/fork-status":
+        from ict_agent.runtime.agent_loop import get_fork_threads_status
+
+        running = get_fork_threads_status(runtime_state)
+        if not running:
+            logger.log("\nNo fork subagents running; all finished.\n", level="success")
+        else:
+            lines = [f"  job_id={e['job_id']} skill={e['skill_name']}" for e in running]
+            logger.log(f"\nFork subagents still running ({len(running)}):\n" + "\n".join(lines) + "\n", level="info")
+        return True
+    if cmd.strip().lower().startswith("/fork-wait"):
+        from ict_agent.runtime.agent_loop import get_fork_threads_status, wait_for_fork_threads
+
+        parts = cmd.strip().split()
+        timeout_sec = 60.0
+        if len(parts) >= 2:
+            try:
+                timeout_sec = float(parts[1])
+            except ValueError:
+                pass
+        if wait_for_fork_threads(runtime_state, timeout_sec=timeout_sec):
+            logger.log("\nAll fork subagents finished.\n", level="success")
+        else:
+            running = get_fork_threads_status(runtime_state)
+            logger.log(f"\nTimeout: {len(running)} fork subagent(s) still running. Use /fork-status to list.\n", level="error")
         return True
     if cmd.startswith("/verbose"):
         parts = cmd.split()

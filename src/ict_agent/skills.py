@@ -15,6 +15,7 @@ class SkillSpec:
     triggers: list[str]
     always_on: bool
     instructions: str
+    context_mode: str  # "inline" (default) or "fork" (Agent as Skill: run via /run only)
 
 
 _SESSION_CONTINUATION_HINTS = (
@@ -90,6 +91,8 @@ def load_skills(skills_root: Path) -> dict[str, SkillSpec]:
         if isinstance(triggers, str):
             triggers = [item.strip() for item in triggers.split(",") if item.strip()]
         always_on = str(meta.get("always_on", "false")).lower() in ("1", "true", "yes", "on")
+        context_raw = str(meta.get("context", "inline")).strip().lower()
+        context_mode = "fork" if context_raw == "fork" else "inline"
         skills[name] = SkillSpec(
             name=name,
             description=str(meta.get("description", "")).strip(),
@@ -97,6 +100,7 @@ def load_skills(skills_root: Path) -> dict[str, SkillSpec]:
             triggers=[item.lower() for item in triggers],
             always_on=always_on,
             instructions=body,
+            context_mode=context_mode,
         )
     return skills
 
@@ -115,6 +119,8 @@ def select_skills(
 
     selected: set[str] = set()
     for name, skill in all_skills.items():
+        if skill.context_mode == "fork":
+            continue
         if skill.always_on or name in pinned_on:
             selected.add(name)
             continue
@@ -175,7 +181,7 @@ def select_skills(
         selected.add("core")
     if not selected and all_skills:
         selected.add(next(iter(all_skills.keys())))
-    return [all_skills[name] for name in sorted(selected) if name in all_skills]
+    return [all_skills[name] for name in sorted(selected) if name in all_skills and all_skills[name].context_mode != "fork"]
 
 
 def build_skill_prompt(selected_skills: list[SkillSpec]) -> str:

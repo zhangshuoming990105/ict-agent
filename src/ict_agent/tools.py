@@ -608,6 +608,84 @@ def get_current_time() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S (%A)")
 
 
+@tool(
+    name="fork_subagent",
+    description=(
+        "Start a fork-skill subagent in the background. Use when a task fits a dedicated skill (e.g. scout for read-only file listing). "
+        "Result is injected into the conversation when ready, or use get_subagent_result(job_id) to wait in this turn. "
+        "return_mode: final = only last reply (default); full_context = entire subagent conversation (for handoff)."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "skill_name": {"type": "string", "description": "Name of a fork skill (context: fork), e.g. scout."},
+            "task": {"type": "string", "description": "Task description for the subagent."},
+            "return_mode": {
+                "type": "string",
+                "description": "final = return only last reply (saves context); full_context = return full subagent log.",
+                "enum": ["final", "full_context"],
+            },
+        },
+        "required": ["skill_name", "task"],
+    },
+)
+def fork_subagent(skill_name: str, task: str, return_mode: str = "final") -> str:
+    from ict_agent.runtime.current_context import get_current_runtime
+    from ict_agent.runtime.agent_loop import start_async_fork
+
+    if return_mode not in ("final", "full_context"):
+        return_mode = "final"
+    runtime = get_current_runtime()
+    if not runtime or not runtime.get("runtime_state") or not runtime.get("client"):
+        return "Error: no runtime context (fork_subagent is only available during an agent turn)."
+    runtime_state = runtime["runtime_state"]
+    client = runtime["client"]
+    logger = runtime["logger"]
+    skills = runtime_state.get("skills", {})
+    if skill_name not in skills:
+        return f"Error: unknown skill '{skill_name}'. Use /skills to list fork skills."
+    skill = skills[skill_name]
+    if skill.context_mode != "fork":
+        return f"Error: '{skill_name}' is not a fork skill (context: fork). Only fork skills can be run as subagents."
+    model = runtime_state.get("model", "")
+    if not model:
+        return "Error: no model set in runtime state."
+    job_id = start_async_fork(runtime_state, client, model, skill, task, logger, return_mode=return_mode)
+    return f"Started fork job_id={job_id} (skill={skill_name}). Result will be injected when ready, or use get_subagent_result(job_id) to wait."
+
+
+@tool(
+    name="get_subagent_result",
+    description="Wait for a fork subagent result by job_id (from fork_subagent). Polls until result is ready or timeout. Drain any completed forks first.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "job_id": {"type": "string", "description": "Job ID returned by fork_subagent."},
+            "timeout_sec": {"type": "integer", "description": "Max seconds to wait (default 120)."},
+        },
+        "required": ["job_id"],
+    },
+)
+def get_subagent_result(job_id: str, timeout_sec: int = 120) -> str:
+    from ict_agent.runtime.current_context import get_current_runtime
+    from ict_agent.runtime.agent_loop import drain_fork_results
+
+    runtime = get_current_runtime()
+    if not runtime or not runtime.get("runtime_state") or not runtime.get("ctx"):
+        return "Error: no runtime context (get_subagent_result is only available during an agent turn)."
+    runtime_state = runtime["runtime_state"]
+    ctx = runtime["ctx"]
+    deadline = time.monotonic() + max(1, min(timeout_sec, 300))
+    while time.monotonic() < deadline:
+        # Do not inject into ctx mid-turn: would break tool_use/tool_result ordering (Bedrock etc.)
+        drain_fork_results(ctx, runtime_state, inject_into_ctx=False)
+        results = runtime_state.get("fork_results", {})
+        if job_id in results:
+            return results[job_id]
+        time.sleep(0.5)
+    return f"Timeout waiting for job_id={job_id} after {timeout_sec}s."
+
+
 def _search_files_python(
     pattern: str,
     target: Path,

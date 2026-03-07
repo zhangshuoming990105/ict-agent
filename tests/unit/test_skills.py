@@ -19,3 +19,13 @@ def test_select_skills_for_shell_and_filesystem_intent():
     assert "shell" in selected_names
     assert "core" in selected_names
     assert build_skill_prompt(selected)
+
+
+def test_fork_skill_excluded_from_select_skills():
+    skills_root = Path(__file__).resolve().parents[2] / "skills"
+    skills = load_skills(skills_root)
+    assert "scout" in skills
+    assert skills["scout"].context_mode == "fork"
+    selected = select_skills("scout list files in src", skills)
+    selected_names = {skill.name for skill in selected}
+    assert "scout" not in selected_names

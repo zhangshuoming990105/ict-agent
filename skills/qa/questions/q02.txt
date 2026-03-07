@@ -1,0 +1,1 @@
+What is the current date and time? Use get_current_time if needed.
