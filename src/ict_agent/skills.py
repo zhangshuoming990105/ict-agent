@@ -179,6 +179,10 @@ def select_skills(
 
     if "core" in all_skills:
         selected.add("core")
+    if "filesystem" in all_skills:
+        selected.add("filesystem")
+    if "shell" in all_skills:
+        selected.add("shell")
     if not selected and all_skills:
         selected.add(next(iter(all_skills.keys())))
     return [all_skills[name] for name in sorted(selected) if name in all_skills and all_skills[name].context_mode != "fork"]

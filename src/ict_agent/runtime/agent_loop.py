@@ -5,6 +5,7 @@ from __future__ import annotations
 from queue import Empty, Queue
 import re
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -114,6 +115,19 @@ def start_async_model_call(
             )
         except Exception as exc:
             call.error = exc
+            # Log request size for 400 debugging (e.g. gpt-oss vs mco-4 tool_calls strictness)
+            try:
+                n_msgs = len(request_messages)
+                n_tools = len(active_tool_schemas)
+                err_str = str(exc)
+                if "400" in err_str or "Bad Request" in err_str:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "API 400 on chat.completions.create: model=%s messages=%s tools=%s err=%s",
+                        model, n_msgs, n_tools, err_str[:200],
+                    )
+            except Exception:  # noqa: S110
+                pass
         finally:
             call.done.set()
 
@@ -652,7 +666,12 @@ def chat(
                         active_tool_schemas=active_tool_schemas,
                     )
                     queued_input_while_waiting = False
+                    model_wait_deadline = time.monotonic() + 90  # 90s max per turn (avoid indefinite hang)
                     while not async_call.done.wait(0.1):
+                        if time.monotonic() > model_wait_deadline:
+                            async_call.error = TimeoutError("Model call timed out after 90s")
+                            async_call.done.set()
+                            break
                         if pending_input is None:
                             pending_from_preempt = to_pending_input_from_preempt_event(
                                 dequeue_user_input_nowait(user_queue),

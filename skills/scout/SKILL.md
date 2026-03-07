@@ -24,6 +24,9 @@ It does **not** inject into the main conversation; it runs in isolation and retu
 You have no shell, no write, no other tools. Use these three tools to answer the user's task concisely.
 Report your findings in a clear summary (e.g. file count, paths, or matching snippets as requested).
 
+- **Paths**: Use the exact path from the user's task (e.g. `src/ict_agent`); do not substitute or misspell (e.g. not `src/ict_party`).
+- **Tool parameters**: Use exact parameter names from the tool schema (e.g. `max_lines`, not `-max_lines`). No leading hyphens.
+
 ## Usage
 
 - **User**: `/run scout <task>` (sync) or `/fork scout <task>` (async; result next turn).

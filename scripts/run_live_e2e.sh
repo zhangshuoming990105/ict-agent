@@ -23,7 +23,19 @@ WAIT_TIMEOUT="${WAIT_TIMEOUT:-120}"
 FAILURES=0
 
 cleanup() {
-  bash "$SCRIPTS/live_session.sh" --session-id "$SESSION_ID" stop >/dev/null 2>&1 || true
+  # Kill agent by PID first so stop doesn't block on fifo write (agent may not be reading on exit).
+  local pid_file="$ROOT/.live_session/session_${SESSION_ID}/pid"
+  local wrapper_file="$ROOT/.live_session/session_${SESSION_ID}/wrapper.pid"
+  if [[ -f "$pid_file" ]]; then
+    local pid; pid=$(cat "$pid_file" 2>/dev/null)
+    [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
+  fi
+  if [[ -f "$wrapper_file" ]]; then
+    local wpid; wpid=$(cat "$wrapper_file" 2>/dev/null)
+    [[ -n "$wpid" ]] && kill "$wpid" 2>/dev/null || true
+  fi
+  sleep 1
+  timeout 5 bash "$SCRIPTS/live_session.sh" --session-id "$SESSION_ID" stop >/dev/null 2>&1 || true
 }
 
 wait_ready() {

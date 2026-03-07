@@ -364,7 +364,7 @@ def list_directory(path: str = ".", include_hidden: bool = False, max_entries: i
         "properties": {
             "path": {"type": "string", "description": "File path relative to workspace root."},
             "start_line": {"type": "integer", "description": "1-indexed start line."},
-            "max_lines": {"type": "integer", "description": "Maximum number of lines to read (1-500)."},
+            "max_lines": {"type": "integer", "description": "Maximum number of lines to read (1-500). Use key 'max_lines' only, no leading hyphen."},
         },
         "required": ["path"],
     },

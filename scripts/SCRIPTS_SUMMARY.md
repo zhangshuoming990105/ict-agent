@@ -79,6 +79,15 @@ Uses an embedded Python script to parse `Assistant:` blocks and prints the lates
 
 ## Test & E2E Scripts
 
+**Python runners** (preferred for CI and real API tests; same pattern as `run_multi_fork_test.py`):
+- **`run_multi_fork_test.py`** — Multi-fork QA test: 2 `/fork qa` subagents, wait for results, `/fork-wait`, `/fork-status`. See `docs/multi_fork_test_manual.md`.
+- **`run_fork_smoke.py`** — Fork smoke: `/run scout`, then main agent uses result; asserts `[fork:scout]`, tools, no leftover threads. Used by `tests/integration_real_api/test_live_session_smoke.py::test_fork_skill_smoke`.
+- **`run_live_e2e.py`** — Live e2e: 10 turns (tools, compile, run) + `/tokens`, `/compact high`, `/debug raw`; asserts tools, compact, JSON. Used by `test_live_session_smoke`.
+
+**Bash equivalents** (kept for manual use; tests call the .py scripts):
+- **`run_fork_smoke.sh`** — Same flow as `run_fork_smoke.py`.
+- **`run_live_e2e.sh`** — Same flow as `run_live_e2e.py` (calls `run_20_turns.sh` for the 20 turns).
+
 ### `test_basic_live_session.sh` (79 lines) — **Basic smoke test**
 Starts a session, sends 3 simple messages (current time, identity question, arithmetic), waits for each reply, then quits. Validates that the session starts, responds, and shuts down correctly.
 
@@ -92,21 +101,7 @@ Tests the `/set-model` command:
 Validates log output for model switch confirmation, correct model name, and expected answers.
 
 ### `run_20_turns.sh` (81 lines) — **20-turn stress test**
-Sends 20 diverse messages to a running session, exercising:
-- Tool usage (`write_file`, `read_file`, `run_shell`, `calculator`)
-- File creation (C programs, Python scripts)
-- Compilation & execution
-- Directory listing
-- Math calculations
-
-Also tests meta-commands: `/tokens`, `/compact high`, `/debug raw`. Reports skipped turns (timeouts).
-
-### `run_live_e2e.sh` (87 lines) — **Full end-to-end integration test**
-Orchestrates a complete E2E test:
-1. Starts a session with a specified model (default `gpt-oss-120b`).
-2. Runs `run_20_turns.sh`.
-3. Validates that: ≥23 ready signals appeared, key tools (`write_file`, `read_file`, `run_shell`) were called, compaction was attempted, and `/debug raw` produced JSON output.
-Reports pass/fail with failure count.
+Sends 20 diverse messages to a running session (tools, file creation, compile, run, calculator). Also `/tokens`, `/compact high`, `/debug raw`. Used by `run_live_e2e.sh`; logic inlined in `run_live_e2e.py`.
 
 ### `run_observed_session.sh` (166 lines) — **Interactive/file-driven session with live log streaming**
 A versatile session runner that streams log output in real time:
@@ -152,8 +147,12 @@ A shorter 5-message test sequence:
 | `wait_for_session_reply.sh` | Poll for new assistant reply | `--session-id`, `--after-lines`, `--timeout` |
 | `test_basic_live_session.sh` | 3-message smoke test | `--session-id` |
 | `test_set_model.sh` | Model switching + context test | `--session-id` |
+| `run_multi_fork_test.py` | Multi-fork QA test (2 subagents) | `--session-id`, `--model`, `-v` |
+| `run_fork_smoke.py` | Fork smoke (/run scout + context) | `--session-id`, `--model`, `-v` |
+| `run_live_e2e.py` | Live e2e (20 turns + compact + debug) | `--session-id`, `--model`, `-v` |
 | `run_20_turns.sh` | 20-turn stress test | `--session-id` |
-| `run_live_e2e.sh` | Full E2E integration test | `--session-id`, `--model` |
+| `run_fork_smoke.sh` | Fork smoke (bash) | `--session-id`, `--model` |
+| `run_live_e2e.sh` | Full E2E (bash) | `--session-id`, `--model` |
 | `run_observed_session.sh` | Interactive/file-driven with live streaming | `--session-id`, `--messages-file`, `--keep-session` |
 | `debug_test_messages.txt` | 15-prompt test data (Chinese) | — |
 | `debug_test_short.txt` | 5-prompt short test data (Chinese) | — |

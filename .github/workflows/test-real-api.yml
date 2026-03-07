@@ -1,0 +1,41 @@
+# Real API 测试：需配置 API Key，仅手动或定时触发，不阻塞 PR。
+# 配置：Settings → Secrets and variables → Actions 添加 KSYUN_API_KEY 或 INFINI_API_KEY。
+# 详见 docs/testing.md
+name: Tests (Real API)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+
+jobs:
+  test-real-api:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.KSYUN_API_KEY != '' || secrets.INFINI_API_KEY != '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv and cache deps
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv pip install -e ".[dev]"
+        env:
+          UV_SYSTEM_PYTHON: 1
+
+      - name: Run real API tests
+        run: python -m pytest tests/integration_real_api/ -v --tb=short
+        env:
+          ICT_AGENT_RUN_REAL_API: "1"
+          KSYUN_API_KEY: ${{ secrets.KSYUN_API_KEY }}
+          INFINI_API_KEY: ${{ secrets.INFINI_API_KEY }}
+        timeout-minutes: 15

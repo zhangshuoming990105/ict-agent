@@ -7,6 +7,9 @@ __pycache__/
 .live_session/
 logs/
 build/
+*.egg-info/
+.pytest_cache/
+.cursor/
 temp/
 cuda_extension.so
 .shell_policy.json

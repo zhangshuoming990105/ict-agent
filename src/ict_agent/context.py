@@ -133,8 +133,32 @@ class ContextManager:
     def add_assistant_message(self, content: str) -> None:
         self.messages.append({"role": "assistant", "content": content})
 
+    @staticmethod
+    def _sanitize_assistant_tool_calls_message(message) -> dict:
+        """Reduce assistant message to API-standard keys only (role, content, tool_calls).
+        Some backends (e.g. gpt-oss) return 400 when messages contain extra keys from
+        model_dump() (refusal, annotations, audio, function_call, etc.)."""
+        raw = message.model_dump() if hasattr(message, "model_dump") else message
+        out = {"role": raw.get("role", "assistant"), "content": raw.get("content") or ""}
+        tool_calls = raw.get("tool_calls") or []
+        out["tool_calls"] = []
+        for tc in tool_calls:
+            fn = tc.get("function") or {}
+            if isinstance(fn, dict):
+                name = fn.get("name") or ""
+                args = fn.get("arguments") or ""
+            else:
+                name = getattr(fn, "name", "") or ""
+                args = getattr(fn, "arguments", "") or ""
+            out["tool_calls"].append({
+                "id": tc.get("id") or "",
+                "type": tc.get("type", "function"),
+                "function": {"name": name, "arguments": args},
+            })
+        return out
+
     def add_assistant_tool_calls(self, message) -> None:
-        self.messages.append(message.model_dump())
+        self.messages.append(self._sanitize_assistant_tool_calls_message(message))
 
     def add_tool_result(self, tool_call_id: str, name: str, content: str) -> None:
         self.messages.append(
