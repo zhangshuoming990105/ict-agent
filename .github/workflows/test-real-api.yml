@@ -11,8 +11,7 @@ on:
 jobs:
   test-real-api:
     runs-on: ubuntu-latest
-    if: ${{ secrets.KSYUN_API_KEY != '' || secrets.INFINI_API_KEY != '' }}
-
+    # Only triggered by workflow_dispatch/schedule; no job-level if(secrets) - not allowed in GHA.
     steps:
       - uses: actions/checkout@v4
 
