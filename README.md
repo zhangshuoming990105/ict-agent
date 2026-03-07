@@ -1,5 +1,7 @@
 # ICT Agent
 
+[![Tests](https://github.com/zhangshuoming990105/ict-agent/actions/workflows/test.yml/badge.svg)](https://github.com/zhangshuoming990105/ict-agent/actions/workflows/test.yml)
+
 `ict-agent` is a staged refactor of `08_preemptible_cuda_agent`.
 
 It keeps the Step 08 behavior baseline while reorganizing the code into clearer
