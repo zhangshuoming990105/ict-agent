@@ -53,4 +53,5 @@ Fork skill（如 **qa**）以 subagent 运行：独立 context、专用工具，
 ## 参考
 
 - 题目列表：`tests/data/fork_quiz_questions.py` 或 `skills/qa/questions.txt`
-- 自动化脚本占位：`scripts/run_multi_fork_test.py`（可按需按上述流程对齐）
+- 自动化测试（与上述流程一致）：`python scripts/run_multi_fork_test.py [--session-id 0] [--model gpt-oss-120b]`；加 `-v`/`--verbose` 可打印每一步和 log 轮询进度。
+- Session 与 async fork 的约束（顺序发送、drain 导致连续 assistant）：`docs/async_fork_and_session.md`

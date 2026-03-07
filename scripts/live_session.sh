@@ -165,6 +165,7 @@ cmd_start() {
     wait "${py_pid}"
   ) &
   local wrapper_pid=$!
+  disown 2>/dev/null || true
   echo "${wrapper_pid}" > "${WRAPPER_PID_PATH}"
   local deadline=$(( $(date +%s) + 5 ))
   while [[ ! -f "${PID_PATH}" ]]; do
