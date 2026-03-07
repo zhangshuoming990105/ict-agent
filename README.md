@@ -1,6 +1,7 @@
 # ICT Agent
 
 [![Tests](https://github.com/zhangshuoming990105/ict-agent/actions/workflows/test.yml/badge.svg)](https://github.com/zhangshuoming990105/ict-agent/actions/workflows/test.yml)
+[![Tests (Real API)](https://github.com/zhangshuoming990105/ict-agent/actions/workflows/test-real-api.yml/badge.svg)](https://github.com/zhangshuoming990105/ict-agent/actions/workflows/test-real-api.yml)
 
 `ict-agent` is a staged refactor of `08_preemptible_cuda_agent`.
 
@@ -107,9 +108,18 @@ ict-agent/
 
 - `tests/unit`: pure logic
 - `tests/integration_mock_api`: runtime flow with mocked model responses
-- `tests/integration_real_api`: live-session style tests against real APIs
+- `tests/integration_real_api`: live-session style tests against real APIs (require API key; see [Real API tests](#real-api-tests-in-ci) below)
 
 For the canonical live-session workflow, see `agent_test.md`.
+
+### Real API tests (in CI)
+
+The **Tests (Real API)** workflow runs only when:
+
+- a push to `main` has a commit message containing **`[real-api]`** (e.g. `git commit -m "fix: xxx [real-api]"`), or
+- you trigger it manually from the [Actions](https://github.com/zhangshuoming990105/ict-agent/actions) tab.
+
+Configure `KSYUN_API_KEY` or `INFINI_API_KEY` in the repo’s **Settings → Secrets and variables → Actions** so the workflow can call the APIs. The badge above reflects the status of this workflow. See `docs/testing.md` for local runs and details.
 For day-to-day session operations, cleanup, reset, and multi-session usage, see `LIVE_SESSION.md`.
 
 Note:
