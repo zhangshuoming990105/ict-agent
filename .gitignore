@@ -10,6 +10,7 @@ build/
 *.egg-info/
 .pytest_cache/
 .cursor/
+.claude/
 temp/
 task/task_results/
 cuda_extension.so

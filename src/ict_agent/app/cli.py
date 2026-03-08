@@ -14,7 +14,7 @@ from ict_agent.app.config import AppConfig
 from ict_agent.commands.common import register_common_commands
 from ict_agent.llm import SUPPORTED_PROVIDERS, create_client, get_provider_help_text, list_models
 from ict_agent.runtime.agent_loop import chat
-from ict_agent.tools import set_gpu_auto, set_gpu_device, set_workspace_root
+from ict_agent.tools import set_gpu_auto, set_gpu_device, set_sandbox_enabled, set_workspace_root
 
 
 DEFAULT_MAX_TOKENS = 128_000
@@ -84,6 +84,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Model to use for compaction (default: gpt-oss-120b)",
     )
+    parser.add_argument(
+        "--sandbox",
+        action="store_true",
+        help="Enable process-level sandbox for shell commands (requires bubblewrap on Linux or sandbox-exec on macOS)",
+    )
     return parser
 
 
@@ -113,6 +118,19 @@ def main() -> int:
         return 0
 
     compact_model = args.compact_model or "gpt-oss-120b"
+    if args.sandbox:
+        from ict_agent.sandbox import sandbox_backend
+        backend = sandbox_backend()
+        set_sandbox_enabled(True)
+        if backend == "none":
+            import platform
+            sys = platform.system()
+            hint = "apt install bubblewrap" if sys == "Linux" else "sandbox-exec is built into macOS"
+            print(
+                f"Warning: --sandbox enabled but no sandbox backend found on {sys}.\n"
+                f"  Install hint: {hint}\n"
+                f"  Falling back to unsandboxed execution.\n"
+            )
     gpu_flag = (args.gpu or "").strip().lower()
     if gpu_flag == "auto":
         set_gpu_auto(True)
@@ -127,8 +145,9 @@ def main() -> int:
         task_dir = domain_adapter.task_dir
         initial_message = domain_adapter.initial_message
     else:
-        set_workspace_root(root_dir)
-        domain_adapter.workspace_root = root_dir
+        workspace = Path(args.workdir or os.getcwd()).resolve()
+        set_workspace_root(workspace)
+        domain_adapter.workspace_root = workspace
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_parent = (task_dir / "logs") if task_dir else (root_dir / "logs")

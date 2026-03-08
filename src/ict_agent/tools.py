@@ -21,6 +21,27 @@ _SHELL_SAFE_MODE = True
 _SHELL_ALLOWLIST: set[str] = set()
 _SHELL_DENYLIST: set[str] = set()
 _SHELL_POLICY_LOADED = False
+_SANDBOX_ENABLED = False
+
+# Commands known to be safe — auto-approved without prompting (cf. Claude Code permissions.ts)
+SAFE_COMMANDS = frozenset({
+    "git status", "git diff", "git log", "git branch", "git show",
+    "git remote -v", "git stash list",
+    "pwd", "ls", "tree", "date", "which", "whoami", "uname -a",
+    "cat /etc/os-release", "python --version", "python3 --version",
+    "pip list", "pip freeze", "node --version", "npm --version",
+})
+
+# Commands/patterns that are always blocked (cf. Claude Code BashTool/prompt.ts BANNED_COMMANDS)
+BANNED_COMMAND_PATTERNS = (
+    re.compile(r"\brm\s+(-\w+\s+)*-rf\s+/\s*$"),     # rm -rf /
+    re.compile(r"\bmkfs\b"),
+    re.compile(r"\bdd\s+if=/dev/"),
+    re.compile(r":()\s*\{\s*:\|:\s*&\s*\}\s*;"),       # fork bomb
+    re.compile(r"\bshutdown\b"),
+    re.compile(r"\breboot\b"),
+    re.compile(r"\binit\s+0\b"),
+)
 _CUSTOM_WORKSPACE_ROOT: Path | None = None
 _GPU_DEVICE: str | None = None
 _GPU_AUTO = False
@@ -59,7 +80,7 @@ def reset_shell_policy_cache() -> None:
 def _workspace_root() -> Path:
     if _CUSTOM_WORKSPACE_ROOT is not None:
         return _CUSTOM_WORKSPACE_ROOT
-    return Path(__file__).resolve().parents[2]
+    return Path.cwd()
 
 
 def workspace_root_str() -> str:
@@ -118,10 +139,56 @@ def _save_shell_policy() -> None:
     policy_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def set_sandbox_enabled(enabled: bool) -> None:
+    global _SANDBOX_ENABLED
+    _SANDBOX_ENABLED = bool(enabled)
+
+
+def is_sandbox_enabled() -> bool:
+    return _SANDBOX_ENABLED
+
+
 def set_shell_safety(enabled: bool) -> None:
     global _SHELL_SAFE_MODE
     _SHELL_SAFE_MODE = bool(enabled)
     _load_shell_policy_if_needed()
+
+
+def _is_banned_command(cmd: str) -> bool:
+    """Check if command matches any banned pattern."""
+    return any(p.search(cmd) for p in BANNED_COMMAND_PATTERNS)
+
+
+def _is_safe_command(cmd: str) -> bool:
+    """Check if command is in the pre-approved safe list."""
+    return cmd in SAFE_COMMANDS
+
+
+def _matches_allowlist(cmd: str, allowlist: set[str]) -> bool:
+    """Check if command matches any allowlist entry (exact or wildcard prefix).
+
+    Supports patterns like "git *" which matches "git status", "git push", etc.
+    """
+    for pattern in allowlist:
+        if pattern.endswith(" *"):
+            prefix = pattern[:-2]
+            if cmd == prefix or cmd.startswith(prefix + " "):
+                return True
+        elif cmd == pattern:
+            return True
+    return False
+
+
+def _matches_denylist(cmd: str, denylist: set[str]) -> bool:
+    """Check if command matches any denylist entry (exact or wildcard prefix)."""
+    for pattern in denylist:
+        if pattern.endswith(" *"):
+            prefix = pattern[:-2]
+            if cmd == prefix or cmd.startswith(prefix + " "):
+                return True
+        elif cmd == pattern:
+            return True
+    return False
 
 
 def get_shell_policy_snapshot() -> dict:
@@ -227,6 +294,22 @@ def _run_shell_command(command: str, timeout_sec: int, cwd: str | None = None) -
             pass
     if work_dir is None:
         work_dir = str(_workspace_root())
+
+    # Sandbox mode: delegate to sandbox module for process-level isolation
+    if _SANDBOX_ENABLED:
+        from ict_agent.sandbox import run_sandboxed
+        env = os.environ.copy()
+        exit_code, stdout, stderr = run_sandboxed(
+            command, work_dir, env=env, timeout_sec=timeout_sec,
+        )
+        lines = [f"exit_code={exit_code}", f"cwd={work_dir}", f"command={command}", "sandbox=enabled"]
+        if stdout:
+            lines.extend(["stdout:", stdout.strip()])
+        if stderr:
+            lines.extend(["stderr:", stderr.strip()])
+        if not stdout and not stderr:
+            lines.append("(no output)")
+        return "\n".join(lines)
 
     env = os.environ.copy()
     needs_gpu = _command_requires_gpu(command)
@@ -527,10 +610,19 @@ def run_shell(command: str, cwd: str | None = None, timeout_sec: int = 120) -> s
     cmd = command.strip()
     if not cmd:
         return "Error: command is empty."
+
+    # Always block dangerous commands regardless of mode
+    if _is_banned_command(cmd):
+        return f"Blocked: command matches a banned pattern and cannot be executed: {cmd}"
+
+    # Always allow safe commands regardless of mode
+    if _is_safe_command(cmd):
+        return _run_shell_command(cmd, timeout_sec, cwd=cwd)
+
     if _SHELL_SAFE_MODE:
-        if cmd in _SHELL_DENYLIST:
+        if _matches_denylist(cmd, _SHELL_DENYLIST):
             return f"Denied by denylist: {cmd}"
-        if cmd in _SHELL_ALLOWLIST:
+        if _matches_allowlist(cmd, _SHELL_ALLOWLIST):
             return _run_shell_command(cmd, timeout_sec, cwd=cwd)
         decision = _confirm_shell_command(cmd)
         if decision == "deny":
