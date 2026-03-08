@@ -387,6 +387,28 @@ class TestSandboxModule:
         args2 = parser.parse_args([])
         assert args2.sandbox is False
 
+    def test_sandbox_blocks_system_write(self):
+        """Sandbox should allow workspace writes and block writes outside."""
+        import tempfile
+        from ict_agent.sandbox import run_sandboxed, is_sandbox_available
+
+        if not is_sandbox_available():
+            pytest.skip("No sandbox backend (bubblewrap/seatbelt) available")
+
+        with tempfile.TemporaryDirectory() as workspace:
+            # Write inside workspace — should succeed
+            code_ok, _, _ = run_sandboxed("touch test_ok.txt", workspace, timeout_sec=10)
+            assert code_ok == 0, "Write inside workspace should succeed"
+
+            # Write outside workspace — should fail
+            code_fail, _, err = run_sandboxed("touch /etc/sandbox_test_xyz", workspace, timeout_sec=10)
+            assert code_fail != 0, "Write to /etc should be blocked"
+            err_lower = err.lower()
+            # macOS seatbelt: "not permitted"/"denied"; Linux bwrap: "read-only file system"
+            assert any(s in err_lower for s in ("not permitted", "denied", "read-only")), (
+                f"Expected permission/read-only error, got: {err}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # Task 5: Streaming

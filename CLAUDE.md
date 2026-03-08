@@ -17,9 +17,9 @@ python main.py --sandbox                    # process-level sandbox
 ## Testing
 
 ```bash
-python -m pytest tests/unit tests/integration_mock_api -v        # 49 tests, no API
-ICT_AGENT_RUN_REAL_API=1 python -m pytest tests/integration_real_api -v  # 10 tests, needs API
-python scripts/run_enhancements_e2e.py -v                        # live agent e2e
+python -m pytest tests/unit tests/integration_mock_api -v        # 50 tests, no API
+ICT_AGENT_RUN_REAL_API=1 python -m pytest tests/integration_real_api -v  # 3 tests, needs API
+python scripts/run_mixed_e2e.py -v                               # lightweight live e2e (3 turns)
 ```
 
 ### Live Session E2E Pattern
@@ -44,7 +44,7 @@ assert "Calling tool: read_file" in log_path.read_text()
 live_send(session_id, "quit")
 ```
 
-Use `--model gpt-oss-120b` for tests. Session IDs: 0=live_e2e, 1=fork_smoke, 2=enhancements, 3=multi_fork.
+Use `--model gpt-oss-120b` for tests. Session IDs: 0=live_e2e, 1=fork_smoke, 2=enhancements, 3=multi_fork, 4=mixed_e2e.
 
 ## Architecture
 
@@ -85,6 +85,7 @@ Use `--model gpt-oss-120b` for tests. Session IDs: 0=live_e2e, 1=fork_smoke, 2=e
 
 ## Conventions
 
+- **Doc updates are mandatory.** After completing a feature or test change, always check and update the relevant docs (`CLAUDE.md`, `docs/testing.md`, `README.md`). Test counts, command examples, and architecture descriptions must stay in sync with the code.
 - Python 3.11+. Source under `src/ict_agent/` with `setuptools` package-dir layout.
 - OpenAI SDK against compatible endpoints. Streaming by default in the main chat loop.
 - Workspace root = `cwd` (no `--task`) or `task_dir/workdir` (with `--task`).
