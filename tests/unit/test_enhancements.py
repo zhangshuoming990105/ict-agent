@@ -98,21 +98,21 @@ class TestLargeOutputPersistence:
         assert "[Output too large" in result
         assert "saved to" in result
 
-        # The file should exist and contain the full output
-        # Extract path from result
+        # The file should exist (workspace-relative path: .tool_outputs/xxx.txt)
         import re
-        match = re.search(r"saved to (/\S+\.txt)", result)
+        match = re.search(r"saved to (\S+\.txt)", result)
         assert match, f"Could not find file path in result: {result}"
-        path = match.group(1)
-        assert os.path.isfile(path), f"Persisted file should exist: {path}"
-        content = Path(path).read_text()
+        rel_path = match.group(1)
+        assert "read_file" in result, "Should hint to use read_file"
+
+        from ict_agent.tools import _workspace_root
+        full_path = _workspace_root() / rel_path
+        assert full_path.is_file(), f"Persisted file should exist: {full_path}"
+        content = full_path.read_text()
         assert content == large, "Persisted file should contain full output"
 
-        # Verify logger was called
         assert any("[large-output]" in line for line in log_lines)
-
-        # Cleanup
-        os.unlink(path)
+        full_path.unlink()
 
     def test_large_output_contains_head_and_tail(self):
         """The persisted reference should contain first and last N chars."""
@@ -131,12 +131,13 @@ class TestLargeOutputPersistence:
         assert "HEAD_MARKER_" in result, "Result should contain head of original"
         assert "_TAIL_MARKER" in result, "Result should contain tail of original"
 
-        # Cleanup temp file
+        # Cleanup
         import re
-        match = re.search(r"saved to (/\S+\.txt)", result)
+        match = re.search(r"saved to (\S+\.txt)", result)
         if match:
             try:
-                os.unlink(match.group(1))
+                from ict_agent.tools import _workspace_root
+                (_workspace_root() / match.group(1)).unlink(missing_ok=True)
             except OSError:
                 pass
 

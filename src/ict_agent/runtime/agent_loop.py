@@ -394,19 +394,29 @@ LARGE_OUTPUT_THRESHOLD = 30_000
 
 
 def _maybe_persist_large_output(result: str, tool_name: str, logger) -> str:
-    """Persist large tool outputs to disk and return a compact reference for context."""
+    """Persist large tool outputs to disk and return a compact reference for context.
+
+    Files are saved inside the workspace under ``.tool_outputs/`` so that
+    ``read_file`` can access them (it rejects paths outside workspace root).
+    """
     if len(result) <= LARGE_OUTPUT_THRESHOLD:
         return result
     import os
-    import tempfile
     try:
-        fd, path = tempfile.mkstemp(suffix=".txt", prefix=f"ict_tool_{tool_name}_")
+        from ict_agent.tools import _workspace_root
+        output_dir = _workspace_root() / ".tool_outputs"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".txt", prefix=f"{tool_name}_", dir=str(output_dir))
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(result)
+        # Use workspace-relative path so read_file can access it
+        rel_path = f".tool_outputs/{Path(path).name}"
         half = 500
-        logger.log(f"  [large-output] Saved {len(result)} chars to {path}", level="system")
+        logger.log(f"  [large-output] Saved {len(result)} chars to {rel_path}", level="system")
         return (
-            f"[Output too large ({len(result)} chars), full content saved to {path}]\n"
+            f"[Output too large ({len(result)} chars), saved to {rel_path}]\n"
+            f"Use read_file(path=\"{rel_path}\") to access the full content.\n"
             f"First {half} chars:\n{result[:half]}\n...\n"
             f"Last {half} chars:\n...{result[-half:]}"
         )
