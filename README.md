@@ -49,7 +49,6 @@ Defer CUDA execution and real GPU verification until compatible hardware is avai
 
 ```bash
 cd ict-agent
-git submodule update --init --recursive
 pip install -e ".[dev]"
 
 export KSYUN_API_KEY="your-key"
@@ -58,6 +57,14 @@ export KSYUN_API_KEY="your-key"
 
 python main.py
 python main.py --task task/example_axpby
+```
+
+## (Optional) Install UniOpBench
+
+```bash
+cd benchmarks/UniOpBench
+pip install -r requirements.txt
+pip install -e .
 ```
 
 ## Provider And Model Selection
