@@ -279,3 +279,33 @@ bash scripts/reset_live_session.sh
 ```
 
 这样最不容易被旧状态干扰。
+
+
+---
+
+# Scripts Reference
+
+## Quick Reference
+
+| Script | Purpose | Key Options |
+|--------|---------|-------------|
+| `live_session.sh` | Core session controller (start/send/status/stop/paths) | `--session-id`, `--ttl` |
+| `close_session.sh` | Graceful shutdown with timeout fallback | `--session-id`, `--timeout` |
+| `list_sessions.sh` | List all sessions and their status | — |
+| `cleanup_live_session.sh` | Clean stale session metadata | `--session-id`, `--stop-running`, `--remove-logs` |
+| `reset_live_session.sh` | Full reset of all session state | — |
+| `kill_lingering_live_session_processes.sh` | Force-kill orphan processes | — |
+| `clean_logs.sh` | Remove log files | `--all` |
+| `read_session_output.sh` | Read/tail session log | `--session-id`, `--lines`, `--assistant-only` |
+| `wait_for_session_reply.sh` | Poll for new assistant reply | `--session-id`, `--after-lines`, `--timeout` |
+| `test_basic_live_session.sh` | 3-message smoke test | `--session-id` |
+| `test_set_model.sh` | Model switching + context test | `--session-id` |
+| `run_multi_fork_test.py` | Multi-fork QA test (2 subagents) | `--session-id`, `--model`, `-v` |
+| `run_fork_smoke.py` | Fork smoke (/run scout + context) | `--session-id`, `--model`, `-v` |
+| `run_live_e2e.py` | Live e2e (20 turns + compact + debug) | `--session-id`, `--model`, `-v` |
+| `run_20_turns.sh` | 20-turn stress test | `--session-id` |
+| `run_fork_smoke.sh` | Fork smoke (bash) | `--session-id`, `--model` |
+| `run_live_e2e.sh` | Full E2E (bash) | `--session-id`, `--model` |
+| `run_observed_session.sh` | Interactive/file-driven with live streaming | `--session-id`, `--messages-file`, `--keep-session` |
+| `debug_test_messages.txt` | 15-prompt test data (Chinese) | — |
+| `debug_test_short.txt` | 5-prompt short test data (Chinese) | — |
