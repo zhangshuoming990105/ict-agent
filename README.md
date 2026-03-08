@@ -49,6 +49,7 @@ Defer CUDA execution and real GPU verification until compatible hardware is avai
 
 ```bash
 cd ict-agent
+git submodule update --init --recursive
 pip install -e ".[dev]"
 
 export KSYUN_API_KEY="your-key"
