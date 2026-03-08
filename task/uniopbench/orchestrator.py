@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def repo_root() -> Path:
@@ -31,8 +34,14 @@ def task_template_path() -> Path:
     return repo_root() / "task" / "uniopbench" / "TASK.md"
 
 
-def runs_root() -> Path:
-    return repo_root() / "task" / "task_results" / "uniopbench" / "runs"
+def experiment_dir(experiment_name: str) -> Path:
+    """Return experiment directory (task_results/uniopbench/<experiment.name>)."""
+    return repo_root() / "task" / "task_results" / "uniopbench" / experiment_name
+
+
+def runs_root(experiment_name: str) -> Path:
+    """Return runs directory for the given experiment. Path includes experiment name from task.yaml."""
+    return experiment_dir(experiment_name) / "runs"
 
 
 def src_root() -> Path:
@@ -57,14 +66,6 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def write_yaml(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.safe_dump(payload, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
-    )
-
-
 class Logger:
     def __init__(self, path: Path):
         self._path = path
@@ -86,11 +87,12 @@ class ExperimentConfig:
     model: str
     notes: str = ""
     provider: str = "auto"
-    temperature: float = 0.2
-    top_p: float = 0.95
-    top_k: int = 50
+    temperature: float | None = None
+    top_p: float | None = None
+    top_k: int | None = None
     max_tokens: int = 8192
     max_repair_rounds: int = 3
+    max_agent_steps: int | None = 0  # 0 = unlimited; None = use formula max(8, max_repair_rounds*4)
     cuda_arch: str = "sm_80"
     enable_torch_compile_baseline: bool = True
 
@@ -169,17 +171,25 @@ def load_task_config(config_path: Path, operators_override: list[str] | None = N
     if max_repair_rounds < 0:
         raise ValueError("experiment.max_repair_rounds must be >= 0")
 
+    max_agent_steps_raw = experiment_raw.get("max_agent_steps")
+    max_agent_steps: int | None = 0  # default: unlimited
+    if max_agent_steps_raw is not None:
+        max_agent_steps = int(max_agent_steps_raw)
+        if max_agent_steps < 0:
+            raise ValueError("experiment.max_agent_steps must be >= 0")
+
     return TaskConfig(
         experiment=ExperimentConfig(
             name=str(experiment_raw.get("name") or "uniopbench_run"),
             notes=str(experiment_raw.get("notes") or ""),
             provider=str(experiment_raw.get("provider") or "auto"),
             model=str(experiment_raw["model"]),
-            temperature=float(experiment_raw.get("temperature", 0.2)),
-            top_p=float(experiment_raw.get("top_p", 0.95)),
-            top_k=int(experiment_raw.get("top_k", 50)),
-            max_tokens=int(experiment_raw.get("max_tokens", 8192)),
+            temperature=float(t) if (t := experiment_raw.get("temperature")) is not None else None,
+            top_p=float(p) if (p := experiment_raw.get("top_p")) is not None else None,
+            top_k=int(k) if (k := experiment_raw.get("top_k")) is not None else None,
+            max_tokens=int(experiment_raw.get("max_tokens", 32768)),
             max_repair_rounds=max_repair_rounds,
+            max_agent_steps=max_agent_steps,
             cuda_arch=str(experiment_raw.get("cuda_arch") or "sm_80"),
             enable_torch_compile_baseline=bool(
                 experiment_raw.get("enable_torch_compile_baseline", True)
@@ -217,6 +227,7 @@ def copy_operator_tree(src: Path, dst: Path) -> None:
             "*.so",
             "lib_cuda_kernel.so",
             ".DS_Store",
+            "kernel.cu",
         ),
     )
 
@@ -242,6 +253,7 @@ def build_prompt(
     operator: str,
     operator_dir: Path,
     prior_round: dict[str, Any] | None,
+    artifact_rel_path: str = "",
 ) -> tuple[str, str]:
     system_parts = [
         "You are operating as the full ict-agent runtime inside an isolated UniOpBench operator workspace.",
@@ -249,19 +261,30 @@ def build_prompt(
         "Do not modify any file other than cuda_/kernel.cu unless the scaffold itself is broken.",
         "The generated kernel must preserve the existing exported C interface expected by the operator's test.py.",
     ]
+    if artifact_rel_path:
+        system_parts.append(
+            f"The operator artifact directory is: {artifact_rel_path}\n"
+            f"- Kernel file: {artifact_rel_path}/cuda_/kernel.cu\n"
+            f"- Always use run_shell with cwd=\"{artifact_rel_path}\" when running test.py commands."
+        )
     if task_config.prompt.use_task_template and task_template_path().is_file():
         system_parts.append(task_template_path().read_text(encoding="utf-8"))
     if task_config.prompt.extra_system:
         system_parts.append(task_config.prompt.extra_system)
 
+    cmd_hint = (
+        f' (run from cwd="{artifact_rel_path}" if workspace is experiment root)'
+        if artifact_rel_path
+        else ""
+    )
     user_parts = [
         f"Operator: {operator}",
         f"Target GPU architecture: {task_config.experiment.cuda_arch}",
         "Read the workspace files, update cuda_/kernel.cu, and validate your changes with:",
-        "python test.py --compile-only",
-        "python test.py --no-perf",
-        "python test.py",
-        "If variants are supported: python test.py --variants yaml --no-perf",
+        f"python test.py --compile-only{cmd_hint}",
+        f"python test.py --no-perf{cmd_hint}",
+        f"python test.py{cmd_hint}",
+        f"If variants are supported: python test.py --variants yaml --no-perf{cmd_hint}",
         "Work autonomously in this turn. When compile and correctness pass, reply with a short summary.",
     ]
     for path in prompt_file_list(operator_dir):
@@ -299,6 +322,13 @@ def load_client(provider: str):
     return create_client(provider)
 
 
+def _resolve_max_agent_steps(experiment: ExperimentConfig) -> int:
+    """Resolve max_agent_steps: None = formula, 0 = unlimited."""
+    if experiment.max_agent_steps is not None:
+        return experiment.max_agent_steps
+    return max(8, experiment.max_repair_rounds * 4)
+
+
 def run_agent_round(
     task_config: TaskConfig,
     workspace_dir: Path,
@@ -310,9 +340,11 @@ def run_agent_round(
     model_name = task_config.experiment.model or default_model
     from ict_agent.app.bootstrap import create_command_registry, create_domain_adapter, create_logger
     from ict_agent.runtime.agent_loop import run_batch_turn
+    from ict_agent.tools import set_workspace_root
 
     domain_adapter = create_domain_adapter(repo_root())
     domain_adapter.workspace_root = workspace_dir
+    set_workspace_root(workspace_dir)
     domain_adapter.task_prompt = (
         "## Runtime Task Context Injection\n"
         "Use this task context for the current autonomous turn.\n\n"
@@ -324,15 +356,15 @@ def run_agent_round(
         "provider": provider_name,
         "base_url": base_url,
         "model": model_name,
-        "temperature": task_config.experiment.temperature,
-        "top_p": task_config.experiment.top_p,
-        "top_k": task_config.experiment.top_k,
         "max_tokens": task_config.experiment.max_tokens,
         "workspace_root": str(workspace_dir),
         "system_prompt": system_prompt,
         "user_prompt": user_prompt,
-        "max_agent_steps": max(8, task_config.experiment.max_repair_rounds * 4),
+        "max_agent_steps": _resolve_max_agent_steps(task_config.experiment),
     }
+    for key in ("temperature", "top_p", "top_k"):
+        if (val := getattr(task_config.experiment, key)) is not None:
+            request_payload[key] = val
     try:
         result = run_batch_turn(
             client=client,
@@ -360,7 +392,16 @@ def run_agent_round(
         "had_failure": result.had_failure,
         "error": result.error,
         "ctx_messages": result.ctx_messages,
+        "token_usage": result.token_usage,
     }
+    if result.ctx_messages:
+        from ict_agent.context import ContextManager
+
+        ctx = ContextManager(system_prompt="", max_tokens=128_000)
+        ctx.messages = result.ctx_messages
+        raw = ctx.format_debug()
+        plain = _ANSI_ESCAPE_RE.sub("", raw)
+        write_text(round_dir / "trajectory.log", plain)
     return request_payload, response_payload
 
 
@@ -417,6 +458,14 @@ def operator_result_template(operator: str, operator_key: str) -> dict[str, Any]
         "operator_key": operator_key,
         "status": "pending",
         "rounds_attempted": 0,
+        "agent_steps_per_round": [],
+        "agent_steps_total": 0,
+        "tokens": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "rounds": [],
+        },
         "compile_only": {"passed": False, "log": ""},
         "verify": {"passed": False, "log": ""},
         "perf": {"passed": False, "log": ""},
@@ -426,36 +475,19 @@ def operator_result_template(operator: str, operator_key: str) -> dict[str, Any]
     }
 
 
-def build_run_metadata(task_config: TaskConfig, config_path: Path, run_id: str) -> dict[str, Any]:
-    return {
-        "run_id": run_id,
-        "created_at": datetime.now().isoformat(),
-        "benchmark_root": str(benchmark_root()),
-        "config_path": str(config_path),
-        "task_template": str(task_template_path()),
-        "runs_root": str(runs_root()),
-        "torch_compile_baseline_supported": False,
-        "experiment": asdict(task_config.experiment),
-        "prompt": asdict(task_config.prompt),
-        "runtime": asdict(task_config.runtime),
-        "operators": task_config.operators,
-    }
-
-
 def run_uniopbench_task(args) -> int:
     config_path = Path(args.config).resolve() if args.config else task_config_path()
     operators_override = args.operators.split(",") if args.operators else None
     task_config = load_task_config(config_path, operators_override=operators_override)
 
     run_id = args.run_id or timestamp_run_id()
-    run_dir = runs_root() / run_id
+    run_dir = runs_root(task_config.experiment.name) / run_id
     if run_dir.exists() and not args.resume:
         raise FileExistsError(f"Run already exists: {run_dir}")
     run_dir.mkdir(parents=True, exist_ok=True)
 
     logger = Logger(run_dir / "console.log")
     try:
-        write_yaml(run_dir / "run_metadata.yaml", build_run_metadata(task_config, config_path, run_id))
         summary = load_existing_summary(run_dir) if args.resume else {"operators": {}}
         env = subprocess_env(task_config)
 
@@ -486,20 +518,14 @@ def run_uniopbench_task(args) -> int:
             result["source_dir"] = str(source_dir)
             result["artifact_dir"] = str(artifact_dir)
             result["supports_variants"] = supports_variants(source_dir / "test.py")
-            write_yaml(
-                op_dir / "metadata.yaml",
-                {
-                    "operator": operator,
-                    "source_dir": str(source_dir),
-                    "artifact_dir": str(artifact_dir),
-                    "experiment": asdict(task_config.experiment),
-                    "prompt": asdict(task_config.prompt),
-                },
-            )
 
             prior_round: dict[str, Any] | None = None
+            exp_dir = experiment_dir(task_config.experiment.name)
+            artifact_rel = f"runs/{run_id}/operators/{operator_key}/artifact"
             if args.dry_run:
-                system_prompt, user_prompt = build_prompt(task_config, operator, source_dir, None)
+                system_prompt, user_prompt = build_prompt(
+                    task_config, operator, source_dir, None, artifact_rel_path=artifact_rel
+                )
                 write_text(prompt_dir / "system.txt", system_prompt)
                 write_text(prompt_dir / "user.txt", user_prompt)
                 result["status"] = "dry_run"
@@ -513,16 +539,26 @@ def run_uniopbench_task(args) -> int:
                 round_dir = rounds_dir / f"round_{round_idx}"
                 round_dir.mkdir(parents=True, exist_ok=True)
                 system_prompt, user_prompt = build_prompt(
-                    task_config, operator, source_dir, prior_round
+                    task_config, operator, source_dir, prior_round, artifact_rel_path=artifact_rel
                 )
                 write_text(prompt_dir / "system.txt", system_prompt)
                 write_text(prompt_dir / "user.txt", user_prompt)
 
                 request_payload, response_payload = run_agent_round(
-                    task_config, artifact_dir, round_dir, system_prompt, user_prompt
+                    task_config, exp_dir, round_dir, system_prompt, user_prompt
                 )
                 write_json(round_dir / "request.json", request_payload)
                 write_json(round_dir / "response.json", response_payload)
+
+                usage = response_payload.get("token_usage") or {}
+                result["tokens"]["rounds"].append(usage)
+                result["tokens"]["prompt_tokens"] += usage.get("prompt_tokens", 0)
+                result["tokens"]["completion_tokens"] += usage.get("completion_tokens", 0)
+                result["tokens"]["total_tokens"] += usage.get("total_tokens", 0)
+
+                steps_this_round = response_payload.get("steps", 0)
+                result["agent_steps_per_round"].append(steps_this_round)
+                result["agent_steps_total"] = sum(result["agent_steps_per_round"])
 
                 kernel_source = (artifact_dir / "cuda_" / "kernel.cu").read_text(
                     encoding="utf-8", errors="replace"
@@ -648,7 +684,18 @@ def run_uniopbench_task(args) -> int:
             item.get("status") == "dry_run" for item in summary.get("operators", {}).values()
         )
         summary["status"] = "failed" if overall_failed else "dry_run" if any_dry_run else "passed"
+
+        ops = summary.get("operators", {})
+        total = len(ops)
+        passed = sum(1 for o in ops.values() if o.get("status") == "passed")
+        failed_list = [o.get("operator", k) for k, o in ops.items() if o.get("status") == "failed"]
+        summary["success_rate"] = f"{passed}/{total}"
+        summary["failed"] = failed_list
+
         write_json(run_dir / "run_summary.json", summary)
+        logger.log(f"\nSuccess rate: {summary['success_rate']}")
+        if failed_list:
+            logger.log(f"Failed: {', '.join(failed_list)}")
         return 1 if overall_failed else 0
     finally:
         logger.close()

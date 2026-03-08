@@ -1,21 +1,12 @@
 experiment:
   name: a100_uniopbench_v1
-  notes: first batch on A100
-  provider: auto
-  model: deepseek-v3
-  temperature: 0.2
-  top_p: 0.95
-  top_k: 50
-  max_tokens: 8192
-  max_repair_rounds: 3
+  model: mcs-1
   cuda_arch: sm_80
-  enable_torch_compile_baseline: true
+  enable_torch_compile_baseline: false
 
 operators:
   # Use `- all` to run every UniOpBench operator.
   - activation/relu
-  - conv/depthwiseconv
-  - matmul/gemm
 
 prompt:
   use_task_template: true

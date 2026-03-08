@@ -8,7 +8,7 @@ It does not modify the upstream UniOpBench source tree. Instead, it:
 - invokes the full `ict-agent` runtime inside that workspace
 - lets the agent edit only `cuda_/kernel.cu`
 - runs the copied operator's native `python test.py ...` commands
-- stores prompts, agent traces, generated artifacts, and test logs under `task/task_results/uniopbench/runs/`
+- stores prompts, agent traces, generated artifacts, and test logs under `task/task_results/uniopbench/<experiment.name>/runs/`
 
 ## Files
 
@@ -19,7 +19,7 @@ It does not modify the upstream UniOpBench source tree. Instead, it:
 ## Config
 
 `task.yaml` defines:
-- `experiment`: model and sampling settings, repair budget, target CUDA arch
+- `experiment`: model and sampling settings, repair budget, target CUDA arch, optional `max_agent_steps` (0 = unlimited)
 - `operators`: explicit operator list, or `all`
 - `prompt`: optional extra prompt fragments
 - `runtime`: run-level behavior such as fail-fast and temp-build cleanup
@@ -35,6 +35,7 @@ experiment:
   top_k: 50
   max_tokens: 8192
   max_repair_rounds: 3
+  # max_agent_steps: 0   # optional; default = max(8, max_repair_rounds*4); 0 = unlimited
   cuda_arch: sm_80
 
 operators:
@@ -87,12 +88,12 @@ Performance is recorded, but it is not currently used as the pass/fail gate.
 
 Runs are written to:
 
-- [runs](/Users/qiuchu/Project/ict-agent/task/task_results/uniopbench/runs)
+- `task/task_results/uniopbench/<experiment.name>/runs/`
 
-Each run looks like:
+The `experiment.name` comes from `task.yaml` (e.g. `a100_uniopbench_v1`). Each run looks like:
 
 ```text
-runs/<run_id>/
+<experiment.name>/runs/<run_id>/
   run_metadata.yaml
   run_summary.json
   console.log

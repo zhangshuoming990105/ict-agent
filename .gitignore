@@ -11,5 +11,6 @@ build/
 .pytest_cache/
 .cursor/
 temp/
+task/task_results/
 cuda_extension.so
 .shell_policy.json
