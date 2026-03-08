@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 from datetime import datetime
 import os
+import sys
 from pathlib import Path
 
 from ict_agent.app.bootstrap import create_command_registry, create_domain_adapter, create_logger
@@ -18,6 +20,20 @@ from ict_agent.tools import set_gpu_auto, set_gpu_device, set_workspace_root
 DEFAULT_MAX_TOKENS = 128_000
 DEFAULT_MAX_AGENT_STEPS = 30
 
+
+def _run_uniopbench(root_dir: Path) -> int:
+    cli_path = root_dir / "task" / "uniopbench" / "cli.py"
+    spec = importlib.util.spec_from_file_location("uniopbench_cli", cli_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load uniopbench CLI from {cli_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module.run(sys.argv)
+
+task_table = {
+    "uniopbench": _run_uniopbench,
+}
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="ICT Agent")
@@ -82,6 +98,9 @@ def main() -> int:
     if args.list_tasks:
         print(domain_adapter.list_tasks())
         return 0
+
+    if args.task in task_table:
+        return task_table[args.task](root_dir)
 
     if args.list_providers:
         print(get_provider_help_text())

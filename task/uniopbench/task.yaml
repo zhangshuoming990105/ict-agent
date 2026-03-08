@@ -1,0 +1,18 @@
+experiment:
+  name: a100_uniopbench_v1
+  model: mcs-1
+  cuda_arch: sm_80
+  enable_torch_compile_baseline: false
+
+operators:
+  # Use `- all` to run every UniOpBench operator.
+  - activation/relu
+
+prompt:
+  use_task_template: true
+  extra_system: ""
+  extra_user: ""
+
+runtime:
+  stop_on_first_failure: false
+  keep_temp_builds: true
