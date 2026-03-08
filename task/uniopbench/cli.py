@@ -1,12 +1,15 @@
+"""UniOpBench task CLI. Parses its own args and delegates to the orchestrator."""
+
+from __future__ import annotations
+
 import argparse
 import importlib.util
 import sys
 from pathlib import Path
 
 
-def _load_uniopbench_orchestrator():
-    repo_root = Path(__file__).resolve().parent
-    orchestrator_path = repo_root / "task" / "uniopbench" / "orchestrator.py"
+def _load_orchestrator():
+    orchestrator_path = Path(__file__).resolve().parent / "orchestrator.py"
     spec = importlib.util.spec_from_file_location("uniopbench_orchestrator", orchestrator_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Unable to load orchestrator from {orchestrator_path}")
@@ -16,13 +19,13 @@ def _load_uniopbench_orchestrator():
     return module
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Repository-level experiment entrypoint")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="UniOpBench experiment runner")
     parser.add_argument(
         "--task",
         choices=["uniopbench"],
-        required=True,
-        help="Task to execute",
+        default="uniopbench",
+        help="Task (always uniopbench when invoked from this module)",
     )
     parser.add_argument(
         "--config",
@@ -46,16 +49,11 @@ def parse_args():
         action="store_true",
         help="Resume a prior run id",
     )
-    return parser.parse_args()
+    return parser
 
 
-def main():
-    args = parse_args()
-    if args.task != "uniopbench":
-        raise ValueError(f"Unknown task: {args.task}")
-    orchestrator = _load_uniopbench_orchestrator()
+def run(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args, _ = parser.parse_known_args(argv or sys.argv[1:])
+    orchestrator = _load_orchestrator()
     return orchestrator.run_uniopbench_task(args)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

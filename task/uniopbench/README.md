@@ -1,6 +1,6 @@
 # UniOpBench Task
 
-This directory contains the repository-owned orchestration layer for running LLM kernel-generation experiments against the external [UniOpBench](/Users/qiuchu/Project/ict-agent/benchmarks/UniOpBench) benchmark.
+This directory contains the repository-owned orchestration layer for running LLM kernel-generation experiments against the external [UniOpBench](../../benchmarks/UniOpBench) benchmark.
 
 It does not modify the upstream UniOpBench source tree. Instead, it:
 - reads an experiment config from `task.yaml`
@@ -12,9 +12,10 @@ It does not modify the upstream UniOpBench source tree. Instead, it:
 
 ## Files
 
-- [task.yaml](/Users/qiuchu/Project/ict-agent/task/uniopbench/task.yaml): experiment config
-- [TASK.md](/Users/qiuchu/Project/ict-agent/task/uniopbench/TASK.md): task prompt injected into the agent runtime
-- [orchestrator.py](/Users/qiuchu/Project/ict-agent/task/uniopbench/orchestrator.py): benchmark runner implementation
+- [task.yaml](task.yaml): experiment config
+- [TASK.md](TASK.md): task prompt injected into the agent runtime
+- [orchestrator.py](orchestrator.py): benchmark runner implementation
+- [cli.py](cli.py): CLI argument parsing and entrypoint (invoked via `main.py --task uniopbench`)
 
 ## Config
 
@@ -55,17 +56,17 @@ operators:
 From the repository root:
 
 ```bash
-python test.py --task uniopbench
+python main.py --task uniopbench
 ```
 
 Useful variants:
 
 ```bash
-python test.py --task uniopbench --dry-run
-python test.py --task uniopbench --operators all
-python test.py --task uniopbench --run-id my_run
-python test.py --task uniopbench --resume --run-id my_run
-python test.py --task uniopbench --config /Users/qiuchu/Project/ict-agent/task/uniopbench/task.yaml
+python main.py --task uniopbench --dry-run
+python main.py --task uniopbench --operators all
+python main.py --task uniopbench --run-id my_run
+python main.py --task uniopbench --resume --run-id my_run
+python main.py --task uniopbench --config task/uniopbench/task.yaml
 ```
 
 ## Execution Model
