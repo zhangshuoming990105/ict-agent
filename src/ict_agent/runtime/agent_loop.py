@@ -100,21 +100,29 @@ class AsyncModelCall:
         self.error: Exception | None = None
 
 
+MAX_TOKENS_TOOL_TURN = 2048
+MAX_TOKENS_FINAL_TURN = 8192
+
+
 def start_async_model_call(
     client: "OpenAI",
     model: str,
     request_messages: list[dict],
     active_tool_schemas: list[dict],
+    max_tokens: int | None = None,
 ) -> AsyncModelCall:
     call = AsyncModelCall()
 
     def worker() -> None:
         try:
-            call.response = client.chat.completions.create(
+            kwargs: dict = dict(
                 model=model,
                 messages=request_messages,
                 tools=active_tool_schemas,
             )
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+            call.response = client.chat.completions.create(**kwargs)
         except Exception as exc:
             call.error = exc
             # Log request size for 400 debugging (e.g. gpt-oss vs mco-4 tool_calls strictness)
@@ -160,6 +168,147 @@ def _token_usage_from_ctx(ctx: ContextManager | None) -> dict | None:
     }
 
 
+def _assemble_streaming_response(
+    content_parts: list[str],
+    tool_calls_acc: dict[int, dict],
+    finish_reason: str | None,
+    usage: Any,
+) -> Any:
+    """Assemble a complete response-like object from accumulated streaming chunks.
+
+    The assembled objects must support ``model_dump()`` so that
+    ``ContextManager._sanitize_assistant_tool_calls_message`` can serialise
+    them the same way it handles real OpenAI SDK response objects.
+    """
+    tool_calls_list = None
+    if tool_calls_acc:
+        tool_calls_list = []
+        for idx in sorted(tool_calls_acc.keys()):
+            tc = tool_calls_acc[idx]
+            tc_id = tc.get("id", "")
+            tc_name = tc.get("name", "")
+            tc_args = tc.get("arguments", "")
+
+            fn_obj = type("Function", (), {
+                "name": tc_name,
+                "arguments": tc_args,
+            })()
+
+            tc_obj = type("ToolCall", (), {
+                "id": tc_id,
+                "type": "function",
+                "function": fn_obj,
+                "get": lambda self, key, default=None, _d={"id": tc_id, "type": "function", "function": {"name": tc_name, "arguments": tc_args}}: _d.get(key, default),
+                "model_dump": lambda self, _d={"id": tc_id, "type": "function", "function": {"name": tc_name, "arguments": tc_args}}: _d,
+            })()
+            tool_calls_list.append(tc_obj)
+
+    content = "".join(content_parts) or None
+    tc_dump = [
+        {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("name", ""), "arguments": tc.get("arguments", "")}}
+        for tc in (tool_calls_acc[idx] for idx in sorted(tool_calls_acc.keys()))
+    ] if tool_calls_acc else []
+
+    message = type("Message", (), {
+        "content": content,
+        "tool_calls": tool_calls_list,
+        "role": "assistant",
+        "model_dump": lambda self, _c=content, _tc=tc_dump: {
+            "role": "assistant",
+            "content": _c or "",
+            "tool_calls": _tc,
+        },
+    })()
+    choice = type("Choice", (), {
+        "message": message,
+        "finish_reason": finish_reason,
+    })()
+    return type("Response", (), {"choices": [choice], "usage": usage})()
+
+
+def start_async_streaming_call(
+    client: "OpenAI",
+    model: str,
+    request_messages: list[dict],
+    active_tool_schemas: list[dict],
+    max_tokens: int | None = None,
+    logger: Any = None,
+) -> AsyncModelCall:
+    """Like start_async_model_call but uses streaming for real-time output."""
+    call = AsyncModelCall()
+
+    def worker() -> None:
+        try:
+            kwargs: dict = dict(
+                model=model,
+                messages=request_messages,
+                tools=active_tool_schemas,
+                stream=True,
+            )
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+            stream = client.chat.completions.create(**kwargs)
+
+            content_parts: list[str] = []
+            tool_calls_acc: dict[int, dict] = {}
+            finish_reason: str | None = None
+            usage = None
+
+            for chunk in stream:
+                if not chunk.choices:
+                    # Some providers send usage in the final chunk with empty choices
+                    if hasattr(chunk, "usage") and chunk.usage:
+                        usage = chunk.usage
+                    continue
+                delta = chunk.choices[0].delta
+                finish_reason = chunk.choices[0].finish_reason or finish_reason
+
+                # Accumulate text content and stream to terminal
+                if hasattr(delta, "content") and delta.content:
+                    content_parts.append(delta.content)
+                    if logger and hasattr(logger, "print_streaming"):
+                        logger.print_streaming(delta.content)
+
+                # Accumulate tool calls incrementally
+                if hasattr(delta, "tool_calls") and delta.tool_calls:
+                    for tc_delta in delta.tool_calls:
+                        idx = tc_delta.index if hasattr(tc_delta, "index") else 0
+                        if idx not in tool_calls_acc:
+                            tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                        if hasattr(tc_delta, "id") and tc_delta.id:
+                            tool_calls_acc[idx]["id"] = tc_delta.id
+                        if hasattr(tc_delta, "function") and tc_delta.function:
+                            fn = tc_delta.function
+                            if hasattr(fn, "name") and fn.name:
+                                tool_calls_acc[idx]["name"] += fn.name
+                            if hasattr(fn, "arguments") and fn.arguments:
+                                tool_calls_acc[idx]["arguments"] += fn.arguments
+
+                if hasattr(chunk, "usage") and chunk.usage:
+                    usage = chunk.usage
+
+            # End streaming line if we printed text content
+            if content_parts and logger and hasattr(logger, "end_streaming"):
+                logger.end_streaming()
+
+            # Build a usage fallback if provider didn't send it
+            if usage is None:
+                usage = type("Usage", (), {
+                    "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+                })()
+
+            call.response = _assemble_streaming_response(
+                content_parts, tool_calls_acc, finish_reason, usage,
+            )
+        except Exception as exc:
+            call.error = exc
+        finally:
+            call.done.set()
+
+    threading.Thread(target=worker, daemon=True).start()
+    return call
+
+
 def unique_preserve_order(items: list[str]) -> list[str]:
     seen: set[str] = set()
     ordered: list[str] = []
@@ -171,6 +320,9 @@ def unique_preserve_order(items: list[str]) -> list[str]:
     return ordered
 
 
+CORE_TOOLS = {"read_file", "write_file", "run_shell", "list_directory", "search_files", "grep_text", "workspace_info"}
+
+
 def resolve_active_tool_schemas(selected_skills, tool_schema_map: dict[str, dict], all_tool_schemas: list[dict]) -> list[dict]:
     selected_tool_names = [
         tool_name
@@ -178,9 +330,13 @@ def resolve_active_tool_schemas(selected_skills, tool_schema_map: dict[str, dict
         for tool_name in skill.tools
         if tool_name in tool_schema_map
     ]
-    if not selected_tool_names:
-        return all_tool_schemas
-    return [tool_schema_map[name] for name in unique_preserve_order(selected_tool_names)]
+    if selected_tool_names:
+        # Skill specifies tools → use those + core tools
+        combined = list(CORE_TOOLS) + selected_tool_names
+        return [tool_schema_map[n] for n in unique_preserve_order(combined) if n in tool_schema_map]
+    # No skill-specified tools → use core tools only (fork tools added separately in chat())
+    core_schemas = [tool_schema_map[n] for n in CORE_TOOLS if n in tool_schema_map]
+    return core_schemas if core_schemas else all_tool_schemas
 
 
 def maybe_extend_skills_for_continuation(user_input: str, selected_skills, runtime_state: dict) -> None:
@@ -234,6 +390,31 @@ def normalize_command_input(user_input: str) -> str:
     return user_input
 
 
+LARGE_OUTPUT_THRESHOLD = 30_000
+
+
+def _maybe_persist_large_output(result: str, tool_name: str, logger) -> str:
+    """Persist large tool outputs to disk and return a compact reference for context."""
+    if len(result) <= LARGE_OUTPUT_THRESHOLD:
+        return result
+    import os
+    import tempfile
+    try:
+        fd, path = tempfile.mkstemp(suffix=".txt", prefix=f"ict_tool_{tool_name}_")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(result)
+        half = 500
+        logger.log(f"  [large-output] Saved {len(result)} chars to {path}", level="system")
+        return (
+            f"[Output too large ({len(result)} chars), full content saved to {path}]\n"
+            f"First {half} chars:\n{result[:half]}\n...\n"
+            f"Last {half} chars:\n...{result[-half:]}"
+        )
+    except Exception as exc:
+        logger.log(f"  [large-output] Failed to persist: {exc}", level="error")
+        return result
+
+
 def process_tool_calls(response, ctx: ContextManager, logger) -> ToolExecutionOutcome:
     message = response.choices[0].message
     if not message.tool_calls:
@@ -254,7 +435,8 @@ def process_tool_calls(response, ctx: ContextManager, logger) -> ToolExecutionOu
         result = execute_tool(name, args)
         display = result if len(result) <= 2000 else result[:1000] + "\n...(truncated)...\n" + result[-500:]
         logger.log(f"  <- Result: {display}", level="result")
-        ctx.add_tool_result(tool_call.id, name, result)
+        result_for_ctx = _maybe_persist_large_output(result, name, logger)
+        ctx.add_tool_result(tool_call.id, name, result_for_ctx)
         if is_tool_failure(name, result):
             failures.append(summarize_failure(name, result))
             failure_kinds.append(classify_cuda_failure(name, result))
@@ -623,18 +805,23 @@ def chat(
             maybe_extend_skills_for_continuation(user_input, selected_skills, runtime_state)
             selected_skill_names = [skill.name for skill in selected_skills]
             active_tool_schemas = resolve_active_tool_schemas(selected_skills, tool_schema_map, all_tool_schemas)
-            for fork_tool_name in ("fork_subagent", "get_subagent_result"):
-                if fork_tool_name in tool_schema_map and not any(
-                    t.get("function", {}).get("name") == fork_tool_name for t in active_tool_schemas
-                ):
-                    active_tool_schemas = active_tool_schemas + [tool_schema_map[fork_tool_name]]
+            # Only inject fork tools when the user input mentions fork/subagent
+            _fork_keywords = ("fork", "subagent", "子代理", "并行")
+            if any(kw in user_input.lower() for kw in _fork_keywords):
+                for fork_tool_name in ("fork_subagent", "get_subagent_result"):
+                    if fork_tool_name in tool_schema_map and not any(
+                        t.get("function", {}).get("name") == fork_tool_name for t in active_tool_schemas
+                    ):
+                        active_tool_schemas = active_tool_schemas + [tool_schema_map[fork_tool_name]]
             active_skill_prompt = build_skill_prompt(selected_skills)
             runtime_state["active_skill_names"] = selected_skill_names
             runtime_state["active_tool_schemas"] = active_tool_schemas
             runtime_state["active_skill_prompt"] = active_skill_prompt
 
+            active_tool_names = [t.get("function", {}).get("name", "?") for t in active_tool_schemas]
             if selected_skill_names:
                 logger.log(f"  [skills] active: {', '.join(selected_skill_names)}", level="debug")
+            logger.log(f"  [tools] sending {len(active_tool_schemas)} tools: {', '.join(active_tool_names)}", level="debug")
 
             overhead_tokens = ctx.estimate_tokens(str(active_tool_schemas)) + ctx.estimate_tokens(active_skill_prompt)
             if ctx.needs_compaction(overhead_tokens=overhead_tokens):
@@ -687,11 +874,14 @@ def chat(
                         request_messages.append({"role": "system", "content": active_skill_prompt})
 
                     response_model = runtime_state["model"]
-                    async_call = start_async_model_call(
+                    turn_max_tokens = MAX_TOKENS_TOOL_TURN if (did_call_tool or step_idx > 0) else MAX_TOKENS_FINAL_TURN
+                    async_call = start_async_streaming_call(
                         client=client,
                         model=response_model,
                         request_messages=request_messages,
                         active_tool_schemas=active_tool_schemas,
+                        max_tokens=turn_max_tokens,
+                        logger=logger,
                     )
                     queued_input_while_waiting = False
                     model_wait_deadline = time.monotonic() + 90  # 90s max per turn (avoid indefinite hang)
@@ -765,8 +955,12 @@ def chat(
                         continue
 
                     ctx.add_assistant_message(content)
-                    logger.log(f"\nAssistant [{response_model}]: {content}", level="assistant")
-                    logger.log(f"  {format_turn_usage(response.usage)}\n", level="info")
+                    # Streaming already printed content to terminal; only log model tag + usage
+                    if content:
+                        logger.log(f"  [{response_model}] {format_turn_usage(response.usage)}\n", level="info")
+                    else:
+                        logger.log(f"\nAssistant [{response_model}]: (no content)", level="assistant")
+                        logger.log(f"  {format_turn_usage(response.usage)}\n", level="info")
                     if runtime_state.get("recovery_cleanup", True) and recovery.had_failure:
                         removed = ctx.drop_failed_tool_messages(start_index=turn_start_index + 1)
                         if removed > 0:

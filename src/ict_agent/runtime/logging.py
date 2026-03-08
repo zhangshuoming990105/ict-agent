@@ -97,6 +97,26 @@ class RunLogger:
             self._file.write(strip_ansi(msg) + "\n")
             self._file.flush()
 
+    def print_streaming(self, text: str) -> None:
+        """Print streaming text chunk without newline (for real-time model output)."""
+        if self._use_color:
+            color = self.LEVEL_COLORS.get("assistant", "")
+            sys.stdout.write(f"{color}{text}{self.RESET}")
+        else:
+            sys.stdout.write(text)
+        sys.stdout.flush()
+        if self._file:
+            self._file.write(strip_ansi(text))
+            self._file.flush()
+
+    def end_streaming(self) -> None:
+        """Finish a streaming output with a newline."""
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        if self._file:
+            self._file.write("\n")
+            self._file.flush()
+
     def close(self) -> None:
         if self._file:
             self._file.close()
