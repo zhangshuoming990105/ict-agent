@@ -397,8 +397,11 @@ class TestSandboxModule:
 
         with tempfile.TemporaryDirectory() as workspace:
             # Write inside workspace — should succeed
-            code_ok, _, _ = run_sandboxed("touch test_ok.txt", workspace, timeout_sec=10)
-            assert code_ok == 0, "Write inside workspace should succeed"
+            code_ok, _, err_ok = run_sandboxed("touch test_ok.txt", workspace, timeout_sec=10)
+            if code_ok != 0 and ("permission" in err_ok.lower() or "operation not permitted" in err_ok.lower()):
+                # bwrap installed but kernel disallows user namespaces (e.g. GitHub Actions runner)
+                pytest.skip(f"bwrap present but unprivileged namespaces blocked: {err_ok.strip()}")
+            assert code_ok == 0, f"Write inside workspace should succeed, stderr: {err_ok}"
 
             # Write outside workspace — should fail
             code_fail, _, err = run_sandboxed("touch /etc/sandbox_test_xyz", workspace, timeout_sec=10)
