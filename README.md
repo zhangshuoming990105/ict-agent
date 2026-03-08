@@ -55,8 +55,10 @@ export KSYUN_API_KEY="your-key"
 # or
 # export INFINI_API_KEY="your-key"
 
-python main.py
-python main.py --task task/example_axpby
+python main.py                              # general agent (workspace = cwd)
+python main.py --task task/example_axpby    # with CUDA task context
+python main.py --safe-shell                 # enable shell command approval
+python main.py --sandbox                    # enable process-level sandbox
 ```
 
 ## (Optional) Install UniOpBench
@@ -96,6 +98,16 @@ Current provider behavior:
 - default provider: `ksyun`
 - optional provider: `infini`
 - optional `auto` mode: prefer `ksyun`, fall back to `infini`
+
+## Recent Enhancements
+
+- **Workspace = cwd**: Without `--task`, the agent uses the current working directory as workspace (like `cd project && agent`).
+- **Streaming responses**: Model output streams token-by-token to the terminal in real time.
+- **Large output persistence**: Tool outputs exceeding 30K chars are saved to disk; only a compact reference is kept in context, saving ~96% tokens.
+- **Dynamic tool schema**: Only core tools (7) are sent to the API by default; fork/calculator tools are injected on demand, reducing per-turn overhead.
+- **max_tokens control**: Tool-calling turns use `max_tokens=2048`, final reply turns use `max_tokens=8192`.
+- **Sandbox (soft)**: Pre-approved safe commands (`git status`, `pwd`, etc.), banned command patterns (`rm -rf /`, `mkfs`, `shutdown`), and wildcard allowlist/denylist matching (`git *`).
+- **Sandbox (process isolation)**: `--sandbox` flag enables bubblewrap (Linux) or macOS seatbelt to restrict file writes to workspace only.
 
 ## Layout
 

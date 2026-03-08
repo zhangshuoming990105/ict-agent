@@ -17,11 +17,12 @@
 | 文件 | 测试数 | 说明 |
 |------|--------|------|
 | `test_commands.py` | 5 | `/set-model`, `/run`, `/fork` 等命令行为 |
+| `test_enhancements.py` | 28 | 6 大增强功能: workspace=cwd, 大输出落盘, max_tokens, 动态 schema, streaming, 沙箱 |
 | `test_fork_tools.py` | 8 | fork 工具：fork_subagent、drain、status、wait |
 | `test_preemption.py` | 1 | 抢占标志 roundtrip |
 | `test_skills.py` | 3 | skills 加载、选择、fork 排除 |
 | `test_task_manager.py` | 3 | 本地 task 解析、prompt 加载、workspace summary |
-| **合计** | **20** | |
+| **合计** | **48** | |
 
 ```bash
 PYTHONPATH=src python -m pytest tests/unit/ -v
@@ -51,9 +52,10 @@ PYTHONPATH=src python -m pytest tests/integration_mock_api/ -v
 
 | 文件 | 测试数 | 说明 | 依赖 |
 |------|--------|------|------|
-| `test_live_session_smoke.py` | 2 | `test_live_session_smoke`: 跑 `run_live_e2e.sh`（多轮对话、工具、/debug） | live session + API |
-| | | `test_fork_skill_smoke`: 跑 `run_fork_smoke.sh`（/run scout + 主副上下文） | live session + API |
-| **合计** | **2** | | |
+| `test_live_session_smoke.py` | 2 | `test_live_session_smoke`: 跑 `run_live_e2e.py`（多轮对话、工具） | live session + API |
+| | | `test_fork_skill_smoke`: 跑 `run_fork_smoke.py`（/run scout + 主副上下文） | live session + API |
+| `test_enhancements_real.py` | 8 | streaming、大输出、沙箱、workspace 等新功能的真实 API 验证 | API (无需 live session) |
+| **合计** | **10** | | |
 
 ```bash
 # 不跑 real_api（默认 skip）
@@ -71,8 +73,9 @@ ICT_AGENT_RUN_REAL_API=1 PYTHONPATH=src python -m pytest tests/integration_real_
 
 | 脚本 | 说明 |
 |------|------|
-| `scripts/run_fork_smoke.sh` | /run scout 烟雾；被 `test_fork_skill_smoke` 调用 |
-| `scripts/run_live_e2e.sh` | 多轮 e2e；被 `test_live_session_smoke` 调用 |
+| `scripts/run_fork_smoke.py` | /run scout 烟雾；被 `test_fork_skill_smoke` 调用 |
+| `scripts/run_live_e2e.py` | 多轮 e2e；被 `test_live_session_smoke` 调用 |
+| `scripts/run_enhancements_e2e.py` | 增强功能 e2e（workspace、大输出、safe-shell）；可独立运行 |
 | `scripts/run_multi_fork_test.py` | 多 fork（2 个 qa）手动/可选验证 |
 | `scripts/test_basic_live_session.sh` | 基础 live 会话 |
 
@@ -82,12 +85,12 @@ ICT_AGENT_RUN_REAL_API=1 PYTHONPATH=src python -m pytest tests/integration_real_
 
 | Level | 目录 | 测试数 | CI 要求 |
 |-------|------|--------|---------|
-| Unit | `tests/unit/` | 20 | ✅ 必须通过 |
+| Unit | `tests/unit/` | 48 | ✅ 必须通过 |
 | Integration mock | `tests/integration_mock_api/` | 1 | ✅ 必须通过 |
-| Integration real_api | `tests/integration_real_api/` | 2 | ⏭️ 按条件 skip（无 API 时跳过） |
-| **总计** | | **23** | |
+| Integration real_api | `tests/integration_real_api/` | 10 | ⏭️ 按条件 skip（无 API 时跳过） |
+| **总计** | | **59** | |
 
-CI 策略：**每次 MR/PR 跑 Unit + Integration mock（21 个）必须绿；real_api 在未配置或未显式启用时不跑（skip），在满足依赖的环境（如 nightly 或手动触发）下再跑。**
+CI 策略：**每次 MR/PR 跑 Unit + Integration mock（49 个）必须绿；real_api 在未配置或未显式启用时不跑（skip），在满足依赖的环境（如 nightly 或手动触发）下再跑。**
 
 ---
 
@@ -115,7 +118,7 @@ ICT_AGENT_RUN_REAL_API=1 PYTHONPATH=src python -m pytest tests/integration_real_
 ### 默认流水线（每次 push/PR）
 
 - **Workflow**：`.github/workflows/test.yml`
-- **行为**：不设置 `ICT_AGENT_RUN_REAL_API`，所以 2 个 real_api 用例被 skip，只跑 21 个 unit + mock，必须全过。
+- **行为**：不设置 `ICT_AGENT_RUN_REAL_API`，所以 10 个 real_api 用例被 skip，只跑 49 个 unit + mock，必须全过。
 - **不跑** real API，因此不需要在 GitHub 配置任何 secret。
 
 ### 在 GitHub 里跑 real API 测试（可选）
@@ -128,6 +131,6 @@ ICT_AGENT_RUN_REAL_API=1 PYTHONPATH=src python -m pytest tests/integration_real_
 - **前置条件**
   - 在 **Settings → Secrets and variables → Actions** 里添加至少一个 **Secret**：`KSYUN_API_KEY` 或 `INFINI_API_KEY`。
   - 若都没配，该 workflow 的 job 会直接 skip（不会报错）。
-- **跑的内容**：`pytest tests/integration_real_api/`，约 2 个用例（live e2e + fork smoke），整体约几分钟，带 15 分钟 timeout。
+- **跑的内容**：`pytest tests/integration_real_api/`，约 10 个用例（live e2e + fork smoke + 8 个增强功能），整体约几分钟，带 15 分钟 timeout。
 
 这样 PR 只依赖 40s 的 unit+mock；real API 只在需要时手动或定时跑，并依赖你在 GitHub 配好的 API Key。
