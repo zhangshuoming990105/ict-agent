@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from queue import Empty, Queue
 import re
 import threading
@@ -31,7 +32,7 @@ from ict_agent.runtime.session import (
     dequeue_user_input_with_timeout,
     to_pending_input_from_preempt_event,
 )
-from ict_agent.runtime.current_context import get_current_runtime, set_current_runtime
+from ict_agent.runtime.current_context import clear_current_runtime, get_current_runtime, set_current_runtime
 from ict_agent.skills import build_skill_prompt, load_skills, select_skills
 from ict_agent.skills import SkillSpec
 from ict_agent.tools import execute_tool, get_all_tool_schemas, get_tool_schema_map, set_shell_safety
@@ -133,6 +134,17 @@ def start_async_model_call(
 
     threading.Thread(target=worker, daemon=True).start()
     return call
+
+
+@dataclass
+class BatchTurnResult:
+    assistant_content: str
+    response_model: str
+    steps: int
+    tool_called: bool
+    had_failure: bool
+    error: str = ""
+    ctx_messages: list[dict] | None = None
 
 
 def unique_preserve_order(items: list[str]) -> list[str]:
@@ -771,3 +783,231 @@ def chat(
         clear_preempt_request()
         reader_stop_event.set()
         reader_thread.join(timeout=1.0)
+
+
+def run_batch_turn(
+    client: "OpenAI",
+    model: str,
+    user_input: str,
+    max_tokens: int,
+    max_agent_steps: int,
+    safe_shell: bool,
+    recovery_cleanup: bool,
+    preempt_shell_kill: bool,
+    compact_client: "OpenAI" | None,
+    compact_model: str | None,
+    logger,
+    command_registry,
+    domain_adapter,
+    skills_root: Path,
+) -> BatchTurnResult:
+    del command_registry  # Batch mode does not dispatch slash commands.
+
+    set_shell_safety(safe_shell)
+    set_shell_interrupt_on_preempt(preempt_shell_kill)
+
+    system_prompt = domain_adapter.compose_system_prompt()
+    ctx = ContextManager(system_prompt=system_prompt, max_tokens=max_tokens)
+    all_tool_schemas = get_all_tool_schemas()
+    tool_schema_map = get_tool_schema_map()
+    skills = load_skills(skills_root)
+
+    default_selected_skills = select_skills("", skills, pinned_on=set())
+    default_tool_schemas = resolve_active_tool_schemas(
+        default_selected_skills, tool_schema_map, all_tool_schemas
+    )
+    default_skill_prompt = build_skill_prompt(default_selected_skills)
+    default_skill_names = [skill.name for skill in default_selected_skills]
+
+    runtime_state = {
+        "verbose": False,
+        "safe_shell": safe_shell,
+        "recovery_cleanup": recovery_cleanup,
+        "skills": skills,
+        "pinned_skills": set(),
+        "active_skill_names": default_skill_names,
+        "active_tool_schemas": default_tool_schemas,
+        "active_skill_prompt": default_skill_prompt,
+        "task_dir": domain_adapter.task_dir,
+        "preempt_shell_kill": preempt_shell_kill,
+        "compact_client": compact_client,
+        "compact_model": compact_model,
+        "model": model,
+        "fork_result_queue": Queue(),
+        "fork_job_counter": 0,
+        "fork_results": {},
+        "fork_threads": [],
+    }
+
+    logger.log("ICT Agent batch turn started.")
+    logger.log(f"Model:        {model}")
+    logger.log(f"Workspace:    {domain_adapter.workspace_root}")
+    logger.log(f"Context:      {max_tokens:,} tokens")
+    logger.log(f"Max steps:    {max_agent_steps}")
+
+    if not user_input.strip():
+        return BatchTurnResult(
+            assistant_content="",
+            response_model=model,
+            steps=0,
+            tool_called=False,
+            had_failure=False,
+            error="Empty user input",
+            ctx_messages=list(ctx.messages),
+        )
+
+    try:
+        set_current_runtime(ctx=ctx, runtime_state=runtime_state, client=client, logger=logger)
+        turn_start_index = len(ctx.messages)
+        ctx.add_user_message(user_input)
+
+        selected_skills = select_skills(
+            user_input, runtime_state["skills"], runtime_state["pinned_skills"]
+        )
+        active_tool_schemas = resolve_active_tool_schemas(
+            selected_skills, tool_schema_map, all_tool_schemas
+        )
+        for fork_tool_name in ("fork_subagent", "get_subagent_result"):
+            if fork_tool_name in tool_schema_map and not any(
+                t.get("function", {}).get("name") == fork_tool_name
+                for t in active_tool_schemas
+            ):
+                active_tool_schemas = active_tool_schemas + [tool_schema_map[fork_tool_name]]
+        active_skill_prompt = build_skill_prompt(selected_skills)
+        runtime_state["active_skill_names"] = [skill.name for skill in selected_skills]
+        runtime_state["active_tool_schemas"] = active_tool_schemas
+        runtime_state["active_skill_prompt"] = active_skill_prompt
+
+        overhead_tokens = ctx.estimate_tokens(str(active_tool_schemas)) + ctx.estimate_tokens(
+            active_skill_prompt
+        )
+        if ctx.needs_compaction(overhead_tokens=overhead_tokens):
+            logger.log("  (Context approaching limit, auto-compacting...)", level="system")
+            do_compact(
+                client,
+                runtime_state["model"],
+                ctx,
+                logger,
+                current_overhead_tokens=overhead_tokens,
+                level="low",
+                compact_client=compact_client,
+                compact_model=compact_model,
+            )
+
+        likely_action_intent = has_action_intent(user_input)
+        autonomy_nudge = ""
+        did_call_tool = False
+        recovery = RecoveryState()
+        set_autonomous_turn(True)
+
+        for step_idx in range(max_agent_steps):
+            request_messages = list(ctx.messages)
+            if autonomy_nudge:
+                request_messages.append({"role": "system", "content": autonomy_nudge})
+            if active_skill_prompt:
+                request_messages.append({"role": "system", "content": active_skill_prompt})
+
+            response_model = runtime_state["model"]
+            response = client.chat.completions.create(
+                model=response_model,
+                messages=request_messages,
+                tools=active_tool_schemas,
+            )
+            ctx.record_usage(response.usage, overhead_tokens=overhead_tokens)
+
+            tool_outcome = process_tool_calls(response, ctx, logger)
+            if tool_outcome.called:
+                did_call_tool = True
+                if tool_outcome.failures:
+                    recovery.record_failures(
+                        tool_outcome.failures, tool_outcome.failure_kinds
+                    )
+                    logger.log(
+                        f"  [recovery] Detected failure ({recovery.last_failure_kind}): "
+                        f"{tool_outcome.failures[-1]}",
+                        level="system",
+                    )
+                    autonomy_nudge = build_recovery_nudge(recovery)
+                else:
+                    recovery.unresolved_failure = False
+                    autonomy_nudge = ""
+                continue
+
+            content = response.choices[0].message.content or ""
+            should_continue = False
+            if likely_action_intent and step_idx < max_agent_steps - 1:
+                if not did_call_tool:
+                    logger.log(
+                        "  [autonomy] Suppressed no-tool reply; continuing...",
+                        level="system",
+                    )
+                    autonomy_nudge = AUTONOMY_NUDGE_TEXT
+                    should_continue = True
+                elif recovery.unresolved_failure:
+                    logger.log(
+                        "  [recovery] Suppressed unresolved-failure reply; continuing...",
+                        level="system",
+                    )
+                    autonomy_nudge = build_recovery_nudge(recovery)
+                    should_continue = True
+                elif is_procedural_confirmation(content):
+                    logger.log(
+                        "  [autonomy] Suppressed procedural-confirmation reply; continuing...",
+                        level="system",
+                    )
+                    autonomy_nudge = AUTONOMY_NUDGE_TEXT
+                    should_continue = True
+            if should_continue:
+                continue
+
+            ctx.add_assistant_message(content)
+            logger.log(f"\nAssistant [{response_model}]: {content}", level="assistant")
+            logger.log(f"  {format_turn_usage(response.usage)}\n", level="info")
+            if recovery_cleanup and recovery.had_failure:
+                removed = ctx.drop_failed_tool_messages(start_index=turn_start_index + 1)
+                if removed > 0:
+                    logger.log(
+                        f"  [recovery] Cleaned {removed} failed intermediate messages from context.\n",
+                        level="system",
+                    )
+            return BatchTurnResult(
+                assistant_content=content,
+                response_model=response_model,
+                steps=step_idx + 1,
+                tool_called=did_call_tool,
+                had_failure=recovery.had_failure,
+                ctx_messages=list(ctx.messages),
+            )
+
+        help_msg = (
+            f"I reached the max autonomous step limit ({max_agent_steps}) for this turn "
+            "and may be stuck. Please provide guidance, constraints, or the next action."
+        )
+        if recovery.failures:
+            help_msg += f" Latest failure: {recovery.failures[-1]}"
+        ctx.add_assistant_message(help_msg)
+        logger.log(f"\nAssistant [{model}]: {help_msg}", level="assistant")
+        return BatchTurnResult(
+            assistant_content=help_msg,
+            response_model=model,
+            steps=max_agent_steps,
+            tool_called=did_call_tool,
+            had_failure=recovery.had_failure,
+            error="max_agent_steps_reached",
+            ctx_messages=list(ctx.messages),
+        )
+    except Exception as exc:
+        logger.log(f"\nError: {exc}\n", level="error")
+        return BatchTurnResult(
+            assistant_content="",
+            response_model=model,
+            steps=0,
+            tool_called=False,
+            had_failure=False,
+            error=str(exc),
+            ctx_messages=list(ctx.messages),
+        )
+    finally:
+        set_autonomous_turn(False)
+        clear_preempt_request()
+        clear_current_runtime()
