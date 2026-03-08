@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass
 from queue import Empty, Queue
 import re
@@ -145,6 +146,18 @@ class BatchTurnResult:
     had_failure: bool
     error: str = ""
     ctx_messages: list[dict] | None = None
+    token_usage: dict | None = None  # prompt_tokens, completion_tokens, total_tokens
+
+
+def _token_usage_from_ctx(ctx: ContextManager | None) -> dict | None:
+    if ctx is None or not hasattr(ctx, "stats"):
+        return None
+    s = ctx.stats
+    return {
+        "prompt_tokens": s.total_prompt_tokens,
+        "completion_tokens": s.total_completion_tokens,
+        "total_tokens": s.total_tokens,
+    }
 
 
 def unique_preserve_order(items: list[str]) -> list[str]:
@@ -528,7 +541,9 @@ def chat(
     logger.log(f"Safe shell mode: {'on' if safe_shell else 'off'}")
     logger.log(f"Preempt shell-kill: {'on' if preempt_shell_kill else 'off'}")
     logger.log(f"Recovery cleanup: {'on' if recovery_cleanup else 'off'}")
-    logger.log(f"Max autonomous steps per turn: {max_agent_steps}")
+    logger.log(
+        f"Max autonomous steps per turn: {max_agent_steps if max_agent_steps > 0 else 'unlimited'}"
+    )
     logger.log(f"Compact model: {compact_model or model}")
     logger.log(f"Workspace: {domain_adapter.workspace_root}")
     if domain_adapter.history_prompt:
@@ -643,7 +658,8 @@ def chat(
             preempted = False
             set_autonomous_turn(True)
 
-            for step_idx in range(max_agent_steps):
+            steps = range(max_agent_steps) if max_agent_steps > 0 else itertools.count()
+            for step_idx in steps:
                 try:
                     pending_from_preempt = to_pending_input_from_preempt_event(
                         dequeue_user_input_nowait(user_queue),
@@ -730,7 +746,9 @@ def chat(
 
                     content = response.choices[0].message.content or ""
                     should_continue = False
-                    if likely_action_intent and step_idx < max_agent_steps - 1:
+                    if likely_action_intent and (
+                        max_agent_steps <= 0 or step_idx < max_agent_steps - 1
+                    ):
                         if not did_call_tool:
                             logger.log("  [autonomy] Suppressed no-tool reply; continuing...", level="system")
                             autonomy_nudge = AUTONOMY_NUDGE_TEXT
@@ -843,7 +861,9 @@ def run_batch_turn(
     logger.log(f"Model:        {model}")
     logger.log(f"Workspace:    {domain_adapter.workspace_root}")
     logger.log(f"Context:      {max_tokens:,} tokens")
-    logger.log(f"Max steps:    {max_agent_steps}")
+    logger.log(
+        f"Max steps:    {max_agent_steps if max_agent_steps > 0 else 'unlimited'}"
+    )
 
     if not user_input.strip():
         return BatchTurnResult(
@@ -854,6 +874,7 @@ def run_batch_turn(
             had_failure=False,
             error="Empty user input",
             ctx_messages=list(ctx.messages),
+            token_usage=_token_usage_from_ctx(ctx),
         )
 
     try:
@@ -900,7 +921,8 @@ def run_batch_turn(
         recovery = RecoveryState()
         set_autonomous_turn(True)
 
-        for step_idx in range(max_agent_steps):
+        steps = range(max_agent_steps) if max_agent_steps > 0 else itertools.count()
+        for step_idx in steps:
             request_messages = list(ctx.messages)
             if autonomy_nudge:
                 request_messages.append({"role": "system", "content": autonomy_nudge})
@@ -935,7 +957,9 @@ def run_batch_turn(
 
             content = response.choices[0].message.content or ""
             should_continue = False
-            if likely_action_intent and step_idx < max_agent_steps - 1:
+            if likely_action_intent and (
+                max_agent_steps <= 0 or step_idx < max_agent_steps - 1
+            ):
                 if not did_call_tool:
                     logger.log(
                         "  [autonomy] Suppressed no-tool reply; continuing...",
@@ -977,6 +1001,7 @@ def run_batch_turn(
                 tool_called=did_call_tool,
                 had_failure=recovery.had_failure,
                 ctx_messages=list(ctx.messages),
+                token_usage=_token_usage_from_ctx(ctx),
             )
 
         help_msg = (
@@ -995,6 +1020,7 @@ def run_batch_turn(
             had_failure=recovery.had_failure,
             error="max_agent_steps_reached",
             ctx_messages=list(ctx.messages),
+            token_usage=_token_usage_from_ctx(ctx),
         )
     except Exception as exc:
         logger.log(f"\nError: {exc}\n", level="error")
@@ -1006,6 +1032,7 @@ def run_batch_turn(
             had_failure=False,
             error=str(exc),
             ctx_messages=list(ctx.messages),
+            token_usage=_token_usage_from_ctx(ctx),
         )
     finally:
         set_autonomous_turn(False)
