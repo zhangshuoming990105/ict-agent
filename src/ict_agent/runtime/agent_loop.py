@@ -965,7 +965,8 @@ def chat(
                         continue
 
                     ctx.add_assistant_message(content)
-                    # Streaming already printed content to terminal; only log model tag + usage
+                    # Streaming already printed content to terminal (with "Assistant: " prefix);
+                    # only log model tag + usage here.
                     if content:
                         logger.log(f"  [{response_model}] {format_turn_usage(response.usage)}\n", level="info")
                     else:

@@ -70,11 +70,17 @@ def test_large_output_persisted():
     result = _maybe_persist_large_output(large, "run_shell", DummyLog())
 
     assert len(result) < LARGE_OUTPUT_THRESHOLD, "Persisted reference should be compact"
-    match = re.search(r"saved to (/\S+\.txt)", result)
-    assert match, "Should contain file path"
-    content = Path(match.group(1)).read_text()
+    match = re.search(r"saved to (\S+\.txt)", result)
+    assert match, f"Should contain file path, got: {result[:200]}"
+    fpath = match.group(1)
+    # Path may be workspace-relative (e.g. .tool_outputs/xxx.txt) or absolute
+    p = Path(fpath)
+    if not p.is_absolute():
+        from ict_agent.tools import _workspace_root
+        p = _workspace_root() / fpath
+    content = p.read_text()
     assert len(content) == len(large), "File should contain full output"
-    os.unlink(match.group(1))
+    os.unlink(str(p))
 
 
 # ---------------------------------------------------------------------------
@@ -85,23 +91,25 @@ def test_large_output_persisted():
 @real_api
 @skip_unless_real_api
 def test_streaming_text_response():
-    """Streaming should deliver text chunks from a real API."""
-    client = _get_client()
+    """Streaming should deliver text via start_async_streaming_call (same path as agent loop)."""
+    from ict_agent.runtime.agent_loop import start_async_streaming_call
 
-    chunks = []
-    stream = client.chat.completions.create(
+    client = _get_client()
+    call = start_async_streaming_call(
+        client=client,
         model=MODEL,
-        messages=[{"role": "user", "content": "回答：1+1=？只回答数字"}],
-        stream=True,
+        request_messages=[{"role": "user", "content": "回答：1+1=？只回答数字"}],
+        active_tool_schemas=[],
         max_tokens=64,
     )
-    for chunk in stream:
-        if chunk.choices and hasattr(chunk.choices[0].delta, "content") and chunk.choices[0].delta.content:
-            chunks.append(chunk.choices[0].delta.content)
+    call.done.wait(timeout=60)
+    assert call.error is None, f"Streaming error: {call.error}"
 
-    full = "".join(chunks)
-    assert len(chunks) >= 1, "Should receive at least 1 chunk"
-    assert full.strip(), "Should have non-empty content"
+    msg = call.response.choices[0].message
+    # Should get text content (no tools provided)
+    assert msg.content and msg.content.strip(), (
+        f"Should receive non-empty text content, got: {msg.content!r}"
+    )
 
 
 @real_api
@@ -189,7 +197,11 @@ def test_sandbox_blocks_system_write():
         # Write outside workspace — should fail
         code_fail, _, err = run_sandboxed("touch /etc/sandbox_test_xyz", workspace, timeout_sec=10)
         assert code_fail != 0, f"Write to /etc should be blocked, got exit=0"
-        assert "not permitted" in err.lower() or "denied" in err.lower(), f"Expected permission error, got: {err}"
+        err_lower = err.lower()
+        # macOS seatbelt: "not permitted" / "denied"; Linux bwrap: "read-only file system"
+        assert any(s in err_lower for s in ("not permitted", "denied", "read-only")), (
+            f"Expected permission/read-only error, got: {err}"
+        )
 
 
 @real_api

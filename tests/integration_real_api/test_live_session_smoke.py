@@ -47,3 +47,14 @@ def test_fork_skill_smoke():
     """Run /run scout, then main agent uses result; scripts/run_fork_smoke.py. Log: .live_session/session_1/stdout.log"""
     result = _run_script("run_fork_smoke.py", REAL_API_TIMEOUT, session_id=1)
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
+
+
+@pytest.mark.real_api
+@pytest.mark.skipif(
+    os.getenv("ICT_AGENT_RUN_REAL_API") != "1",
+    reason="Set ICT_AGENT_RUN_REAL_API=1 to run real API live-session tests.",
+)
+def test_mixed_e2e_smoke():
+    """Mixed feature combo: calculator, time, write, shell+sandbox. Log: .live_session/session_4/stdout.log"""
+    result = _run_script("run_mixed_e2e.py", REAL_API_TIMEOUT, session_id=4)
+    assert result.returncode == 0, result.stdout + "\n" + result.stderr

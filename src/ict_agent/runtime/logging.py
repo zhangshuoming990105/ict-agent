@@ -57,6 +57,7 @@ class RunLogger:
     def __init__(self, log_path: Path | None = None):
         self._file = None
         self._use_color = is_tty()
+        self._streaming_started = False
         if log_path:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             self._file = open(log_path, "w", encoding="utf-8")
@@ -98,7 +99,22 @@ class RunLogger:
             self._file.flush()
 
     def print_streaming(self, text: str) -> None:
-        """Print streaming text chunk without newline (for real-time model output)."""
+        """Print streaming text chunk without newline (for real-time model output).
+
+        On the first chunk of each streaming sequence, emits an
+        ``Assistant: `` prefix so log files contain the same marker as
+        non-streaming replies.  Call ``end_streaming()`` to reset.
+        """
+        if not self._streaming_started:
+            prefix = "\nAssistant: "
+            if self._use_color:
+                color = self.LEVEL_COLORS.get("assistant", "")
+                sys.stdout.write(f"{color}{prefix}{self.RESET}")
+            else:
+                sys.stdout.write(prefix)
+            if self._file:
+                self._file.write(prefix)
+            self._streaming_started = True
         if self._use_color:
             color = self.LEVEL_COLORS.get("assistant", "")
             sys.stdout.write(f"{color}{text}{self.RESET}")
@@ -110,12 +126,13 @@ class RunLogger:
             self._file.flush()
 
     def end_streaming(self) -> None:
-        """Finish a streaming output with a newline."""
+        """Finish a streaming output with a newline and reset the prefix flag."""
         sys.stdout.write("\n")
         sys.stdout.flush()
         if self._file:
             self._file.write("\n")
             self._file.flush()
+        self._streaming_started = False
 
     def close(self) -> None:
         if self._file:
