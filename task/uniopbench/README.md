@@ -71,12 +71,16 @@ python main.py --task uniopbench --config task/uniopbench/task.yaml
 
 ## Execution Model
 
+Each operator runs in an **isolated agent session and context**:
+- **Workspace**: Each operator gets its own workspace (`artifact/` directory); no shared workspace across operators.
+- **Context**: Each batch turn creates a fresh `ContextManager`; no conversation history carries over between operators or rounds.
+
 For each operator, the orchestrator:
 1. copies the upstream operator into a run-local `artifact/` directory
 2. builds a task prompt from `TASK.md` plus the operator's `test.py`, `torch_/ref.py`, `cases.yaml`, and optional legacy helper files
-3. launches a single autonomous `ict-agent` batch turn in that copied workspace
+3. launches a single autonomous `ict-agent` batch turn with that operator's artifact as the workspace root
 4. lets the agent inspect files, edit `cuda_/kernel.cu`, and run the operator's native test commands
-5. if compile or correctness fails, feeds the prior round's kernel and logs into the next repair round
+5. if compile or correctness fails, feeds the prior round's kernel and logs into the next repair round (same operator, new turn with fresh context)
 
 Success is currently defined as:
 - `python test.py --compile-only` passes

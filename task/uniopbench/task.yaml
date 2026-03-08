@@ -6,7 +6,7 @@ experiment:
 
 operators:
   # Use `- all` to run every UniOpBench operator.
-  - activation/relu
+  - all
 
 prompt:
   use_task_template: true

@@ -6,7 +6,7 @@ The target operator already provides:
 - `test.py`: the execution contract and benchmark entrypoint
 - `torch_/ref.py`: the correctness reference
 - `cases.yaml`: the variant matrix
-- optional legacy helpers such as `get_data.py`, `check_cuda.py`, `check_triton.py`
+- optional legacy helpers such as `get_data.py`, `check_cuda.py`
 
 ## 1. Objective
 

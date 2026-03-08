@@ -228,6 +228,7 @@ def copy_operator_tree(src: Path, dst: Path) -> None:
             "lib_cuda_kernel.so",
             ".DS_Store",
             "kernel.cu",
+            "kernel.py"
         ),
     )
 
@@ -266,6 +267,10 @@ def build_prompt(
             f"The operator artifact directory is: {artifact_rel_path}\n"
             f"- Kernel file: {artifact_rel_path}/cuda_/kernel.cu\n"
             f"- Always use run_shell with cwd=\"{artifact_rel_path}\" when running test.py commands."
+        )
+    else:
+        system_parts.append(
+            "The workspace root is the operator artifact directory. Run test.py commands directly from the workspace."
         )
     if task_config.prompt.use_task_template and task_template_path().is_file():
         system_parts.append(task_template_path().read_text(encoding="utf-8"))
@@ -520,8 +525,8 @@ def run_uniopbench_task(args) -> int:
             result["supports_variants"] = supports_variants(source_dir / "test.py")
 
             prior_round: dict[str, Any] | None = None
-            exp_dir = experiment_dir(task_config.experiment.name)
-            artifact_rel = f"runs/{run_id}/operators/{operator_key}/artifact"
+            # Each operator gets its own workspace (artifact_dir) and isolated agent session/context
+            artifact_rel = ""  # workspace is artifact_dir; no cwd override needed
             if args.dry_run:
                 system_prompt, user_prompt = build_prompt(
                     task_config, operator, source_dir, None, artifact_rel_path=artifact_rel
@@ -545,7 +550,7 @@ def run_uniopbench_task(args) -> int:
                 write_text(prompt_dir / "user.txt", user_prompt)
 
                 request_payload, response_payload = run_agent_round(
-                    task_config, exp_dir, round_dir, system_prompt, user_prompt
+                    task_config, artifact_dir, round_dir, system_prompt, user_prompt
                 )
                 write_json(round_dir / "request.json", request_payload)
                 write_json(round_dir / "response.json", response_payload)
