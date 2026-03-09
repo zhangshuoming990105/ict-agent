@@ -53,3 +53,117 @@ Benchmark root: /data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench
 [retry] other/scatter: round 2 failed: compile=0, verify=1, perf=1, variants=None
 [retry] other/scatter: round 3 failed: compile=0, verify=1, perf=1, variants=None
 [fail] other/scatter
+Run ID: 20260308_222632
+Config: /data/yuqiuchu/Project/ict-agent/task/uniopbench/task.yaml
+Benchmark root: /data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench
+[skip] activation/elu: already passed
+[skip] activation/gelu: already passed
+[skip] activation/hardshrink: already passed
+[skip] activation/hardswish: already passed
+[skip] activation/relu: already passed
+[skip] activation/sigmoid: already passed
+[skip] activation/swish: already passed
+[skip] attention/gqa: already passed
+[skip] attention/merge_attn_states: already passed
+[skip] attention/mha: already passed
+[skip] attention/rope: already passed
+[skip] conv/conv1d: already passed
+[skip] conv/conv2d: already passed
+[skip] conv/depthwiseconv: already passed
+[skip] cvcuda/adaptive_threshold: already passed
+[skip] elementary/add: already passed
+[skip] elementary/sign: already passed
+[skip] elementary/sin: already passed
+[skip] elementary/square: already passed
+[skip] elementary/sub: already passed
+[skip] matmul/bmm: already passed
+[skip] matmul/dense: already passed
+[skip] matmul/dot-product: already passed
+[skip] matmul/gemm: already passed
+[skip] matmul/gemv: already passed
+[skip] norm/batchnorm: already passed
+[skip] norm/instancenorm: already passed
+[skip] norm/layernorm: already passed
+[skip] norm/rmsnorm: already passed
+[skip] other/concat: already passed
+[skip] other/deformable: already passed
+[skip] other/embedding: already passed
+[skip] other/gatemlp: already passed
+Run ID: 20260308_222632
+Config: /data/yuqiuchu/Project/ict-agent/task/uniopbench/task.yaml
+Benchmark root: /data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench
+[skip] activation/elu: already passed
+[skip] activation/gelu: already passed
+[skip] activation/hardshrink: already passed
+[skip] activation/hardswish: already passed
+[skip] activation/relu: already passed
+[skip] activation/sigmoid: already passed
+[skip] activation/swish: already passed
+[skip] attention/gqa: already passed
+[skip] attention/merge_attn_states: already passed
+[skip] attention/mha: already passed
+[skip] attention/rope: already passed
+[skip] conv/conv1d: already passed
+[skip] conv/conv2d: already passed
+[skip] conv/depthwiseconv: already passed
+[skip] cvcuda/adaptive_threshold: already passed
+[skip] elementary/add: already passed
+[skip] elementary/sign: already passed
+[skip] elementary/sin: already passed
+[skip] elementary/square: already passed
+[skip] elementary/sub: already passed
+[skip] matmul/bmm: already passed
+[skip] matmul/dense: already passed
+[skip] matmul/dot-product: already passed
+[skip] matmul/gemm: already passed
+[skip] matmul/gemv: already passed
+[skip] norm/batchnorm: already passed
+[skip] norm/instancenorm: already passed
+[skip] norm/layernorm: already passed
+[skip] norm/rmsnorm: already passed
+[skip] other/concat: already passed
+[skip] other/deformable: already passed
+[skip] other/embedding: already passed
+[skip] other/gatemlp: already passed
+Run ID: 20260308_222632
+Config: /data/yuqiuchu/Project/ict-agent/task/uniopbench/task.yaml
+Benchmark root: /data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench
+[skip] activation/elu: already recorded (status=passed)
+[skip] activation/gelu: already recorded (status=passed)
+[skip] activation/hardshrink: already recorded (status=passed)
+[skip] activation/hardswish: already recorded (status=passed)
+[skip] activation/relu: already recorded (status=passed)
+[skip] activation/sigmoid: already recorded (status=passed)
+[skip] activation/swish: already recorded (status=passed)
+[skip] attention/gqa: already recorded (status=passed)
+[skip] attention/merge_attn_states: already recorded (status=passed)
+[skip] attention/mha: already recorded (status=passed)
+[skip] attention/rope: already recorded (status=passed)
+[skip] conv/conv1d: already recorded (status=passed)
+[skip] conv/conv2d: already recorded (status=passed)
+[skip] conv/depthwiseconv: already recorded (status=passed)
+[skip] cvcuda/adaptive_threshold: already recorded (status=passed)
+[skip] elementary/add: already recorded (status=passed)
+[skip] elementary/sign: already recorded (status=passed)
+[skip] elementary/sin: already recorded (status=passed)
+[skip] elementary/square: already recorded (status=passed)
+[skip] elementary/sub: already recorded (status=passed)
+[skip] matmul/bmm: already recorded (status=passed)
+[skip] matmul/dense: already recorded (status=passed)
+[skip] matmul/dot-product: already recorded (status=passed)
+[skip] matmul/gemm: already recorded (status=passed)
+[skip] matmul/gemv: already recorded (status=passed)
+[skip] norm/batchnorm: already recorded (status=passed)
+[skip] norm/instancenorm: already recorded (status=passed)
+[skip] norm/layernorm: already recorded (status=passed)
+[skip] norm/rmsnorm: already recorded (status=passed)
+[skip] other/concat: already recorded (status=passed)
+[skip] other/deformable: already recorded (status=passed)
+[skip] other/embedding: already recorded (status=passed)
+[skip] other/gatemlp: already recorded (status=passed)
+[skip] other/gather: already recorded (status=failed)
+[skip] other/nms: already recorded (status=passed)
+[skip] other/scatter: already recorded (status=passed)
+[pass] other/transpose in round 0
+[pass] pool/avgpool in round 0
+[retry] pool/maxpool: round 0 failed: compile=0, verify=1, perf=1, variants=None

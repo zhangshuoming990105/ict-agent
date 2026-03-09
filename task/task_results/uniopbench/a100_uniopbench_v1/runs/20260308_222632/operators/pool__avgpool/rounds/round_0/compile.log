@@ -1,0 +1,11 @@
+
+================================================================================
+Testing AvgPool operator with CUDA backend
+Input: (4, 128, 56, 56)
+Output: (4, 128, 26, 26)
+Kernel: 5, Stride: 2
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

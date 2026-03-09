@@ -94,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     parser = build_parser()
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
 
     root_dir = Path(__file__).resolve().parents[3]
     session_id = (os.getenv("ICT_AGENT_SESSION_ID") or "0").strip() or "0"

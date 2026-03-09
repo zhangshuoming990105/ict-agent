@@ -1,4 +1,4 @@
-"""Test script for Gather operator using the new optest framework.
+"""Test script for MaxPool operator using the new optest framework.
 
 This is the new unified test entry point that replaces check_cuda.py and
 check_triton.py.
@@ -29,31 +29,41 @@ sys.path.insert(0, TESTCASE_DIR)
 
 
 @dataclass
-class GatherParams:
-    """Gather test parameters."""
+class MaxPoolParams:
+    """MaxPool test parameters."""
 
-    data_shape: tuple = (50, 128, 4)
-    num_indices: int = 4
-    output_shape: tuple = (50, 128, 4)
+    batch_size: int = 4
+    channels: int = 64
+    height: int = 8
+    width: int = 8
+    kernel_size: int = 5
+    stride: int = 3
+    output_height: int = 2  # (8 - 5) // 3 + 1 = 2
+    output_width: int = 2  # (8 - 5) // 3 + 1 = 2
 
 
 # Define test case using new framework
 testcase = TestCase(
     tensor_specs=[
-        TensorSpec("params", torch.float32, ("data_shape",), "input"),
-        TensorSpec("indices", torch.int64, ("num_indices",), "input"),
+        TensorSpec(
+            "input",
+            torch.float32,
+            ("batch_size", "channels", "height", "width"),
+            "input",
+        ),
         TensorSpec(
             "output",
             torch.float32,
-            ("data_shape", 0, "data_shape", 1, "num_indices"),
+            ("batch_size", "channels", "output_height", "output_width"),
             "output",
         ),
     ],
     scalar_specs=[
-        ScalarSpec("dim0", int, lambda p: p.data_shape[0]),
-        ScalarSpec("dim1", int, lambda p: p.data_shape[1]),
-        ScalarSpec("dim2", int, lambda p: p.data_shape[2]),
-        ScalarSpec("num_indices", int, lambda p: p.num_indices),
+        ScalarSpec("batch_size", int, lambda p: p.batch_size),
+        ScalarSpec("channels", int, lambda p: p.channels),
+        ScalarSpec("input_H", int, lambda p: p.height),
+        ScalarSpec("kernel_size", int, lambda p: p.kernel_size),
+        ScalarSpec("stride", int, lambda p: p.stride),
     ],
     torch_kernel=torch_kernel,
 )
@@ -61,7 +71,7 @@ testcase = TestCase(
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Gather kernel test (new framework)")
+    parser = argparse.ArgumentParser(description="MaxPool kernel test (new framework)")
     parser.add_argument(
         "--compile-only",
         action="store_true",
@@ -96,12 +106,18 @@ def main():
         backend = TritonBackend()
 
     # Create test parameters
-    params = GatherParams()
+    params = MaxPoolParams()
 
     # Run test
     print(f"\n{'=' * 80}")
-    print(f"Testing Gather operator with {backend.name} backend")
-    print(f"Data shape: {params.data_shape}, Indices: {params.num_indices}")
+    print(f"Testing MaxPool operator with {backend.name} backend")
+    print(
+        f"Input: ({params.batch_size}, {params.channels}, {params.height}, {params.width})"
+    )
+    print(
+        f"Output: ({params.batch_size}, {params.channels}, {params.output_height}, {params.output_width})"
+    )
+    print(f"Kernel: {params.kernel_size}, Stride: {params.stride}")
     print(f"{'=' * 80}\n")
 
     result = run_test(

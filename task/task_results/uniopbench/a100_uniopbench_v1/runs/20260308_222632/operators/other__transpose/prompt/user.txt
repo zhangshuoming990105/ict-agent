@@ -1,4 +1,4 @@
-Operator: other/gather
+Operator: other/transpose
 Target GPU architecture: sm_80
 Read the workspace files, update cuda_/kernel.cu, and validate your changes with:
 python test.py --compile-only
@@ -9,12 +9,6 @@ Work autonomously in this turn. When compile and correctness pass, reply with a 
 
 ## File: test.py
 ```py
-"""Test script for Gather operator using the new optest framework.
-
-This is the new unified test entry point that replaces check_cuda.py and
-check_triton.py.
-"""
-
 import os
 import sys
 import argparse
@@ -30,6 +24,8 @@ from optest import (
     TritonBackend,
     run_test,
     print_result,
+    create_suite,
+    print_suite_summary,
 )
 
 from torch_.ref import torch_kernel
@@ -40,39 +36,87 @@ sys.path.insert(0, TESTCASE_DIR)
 
 
 @dataclass
-class GatherParams:
-    """Gather test parameters."""
+class TransposeParams:
+    # 约定形状: (M, N)
+    shape: tuple = (1024, 1024)
+    dtype: torch.dtype = torch.float32
+    op_levels: int = 13 # 0-13 对应 kernel.cu 中的 switch case
 
-    data_shape: tuple = (50, 128, 4)
-    num_indices: int = 4
-    output_shape: tuple = (50, 128, 4)
+    @property
+    def in_shape(self) -> tuple:
+        return (int(self.shape[0]), int(self.shape[1]))
+
+    @property
+    def out_shape(self) -> tuple:
+        return (int(self.shape[1]), int(self.shape[0]))
+
+    @property
+    def M(self) -> int:
+        return int(self.shape[0])
+
+    @property
+    def N(self) -> int:
+        return int(self.shape[1])
+    
+    @property
+    def op_levels_val(self) -> int:
+        return int(self.op_levels)
 
 
-# Define test case using new framework
 testcase = TestCase(
     tensor_specs=[
-        TensorSpec("params", torch.float32, ("data_shape",), "input"),
-        TensorSpec("indices", torch.int64, ("num_indices",), "input"),
-        TensorSpec(
-            "output",
-            torch.float32,
-            ("data_shape", 0, "data_shape", 1, "num_indices"),
-            "output",
-        ),
+        TensorSpec("input", "dtype", (lambda p: p.in_shape), "input"),
+        TensorSpec("output", "dtype", (lambda p: p.out_shape), "output"),
     ],
     scalar_specs=[
-        ScalarSpec("dim0", int, lambda p: p.data_shape[0]),
-        ScalarSpec("dim1", int, lambda p: p.data_shape[1]),
-        ScalarSpec("dim2", int, lambda p: p.data_shape[2]),
-        ScalarSpec("num_indices", int, lambda p: p.num_indices),
+        ScalarSpec("M", int, lambda p: p.M),
+        ScalarSpec("N", int, lambda p: p.N),
+        ScalarSpec("op_levels", int, lambda p: p.op_levels_val),
     ],
     torch_kernel=torch_kernel,
 )
 
+def manual_generate_data(self, params):
+    device = torch.device("cuda")
+
+    val_M = params.M
+    val_N = params.N
+    val_op = params.op_levels_val
+
+    # 生成数据: M x N
+    input_tensor = torch.randn(
+        val_M, val_N, 
+        dtype=torch.float32, device=device
+    )
+    
+    # 输出: N x M
+    output_tensor = torch.zeros(
+        val_N, val_M, 
+        dtype=torch.float32, device=device
+    )
+
+    all_inputs = [
+        input_tensor,
+        output_tensor,
+        val_M,
+        val_N,
+        val_op
+    ]
+
+    torch_inputs = [input_tensor]
+
+    return {
+        "all_inputs": all_inputs,
+        "torch_inputs": torch_inputs,
+        "outputs": [output_tensor]   
+    }
+
+testcase.generate_data = manual_generate_data.__get__(testcase)
+
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Gather kernel test (new framework)")
+    parser = argparse.ArgumentParser(description="Transpose kernel test (new framework)")
     parser.add_argument(
         "--compile-only",
         action="store_true",
@@ -87,6 +131,18 @@ def parse_args():
         default="cuda",
         help="Backend to test (default: cuda)",
     )
+    parser.add_argument(
+        "--variants",
+        choices=["yaml", "none"],
+        default="none",
+        help='Test variants: "yaml" to load from cases.yaml, "none" for single test',
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print individual variant results in suite mode",
+    )
     return parser.parse_args()
 
 
@@ -96,8 +152,13 @@ def main():
 
     # Create test configuration
     config = TestConfig(
-        enable_perf=not args.no_perf,
+        enable_perf=True, # not args.no_perf
         compile_only=args.compile_only,
+        verbose=True,
+        perf_warmup=100,
+        perf_iterations=1000,
+        atol=1e-3,
+        rtol=1e-3,
     )
 
     # Create backend
@@ -106,13 +167,30 @@ def main():
     else:  # triton
         backend = TritonBackend()
 
-    # Create test parameters
-    params = GatherParams()
+    # Variant mode: run all variants from cases.yaml
+    if args.variants == "yaml":
+        suite = create_suite(
+            params_class=TransposeParams,
+            testcase=testcase,
+            testcase_dir=TESTCASE_DIR,
+            backend=backend,
+            variant_source="yaml",
+        )
+        print(f"\n{'=' * 80}")
+        print(f"Testing Transpose operator with {backend.name} backend (variant mode)")
+        print(f"{'=' * 80}\n")
 
-    # Run test
+        result = suite.run()
+        print_suite_summary(result, verbose=True)
+        return result.exit_code
+
+    # Single test mode: test with default parameters
+    params = TransposeParams()
+
     print(f"\n{'=' * 80}")
-    print(f"Testing Gather operator with {backend.name} backend")
-    print(f"Data shape: {params.data_shape}, Indices: {params.num_indices}")
+    print(f"Testing Transpose operator with {backend.name} backend (single test mode)")
+    print(f"Shape: {params.shape}")
+    print(f"Dtype: {params.dtype}, Op Level: {params.op_levels} -> Kernel OpType: {params.op_levels}")
     print(f"{'=' * 80}\n")
 
     result = run_test(
@@ -132,50 +210,47 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
 ```
 
 ## File: torch_/ref.py
 ```py
 import torch
 
-
-def torch_kernel(params: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
-    expanded_indices = indices.view(1, 1, -1).expand(params.size(0), params.size(1), -1)
-    return torch.gather(params, dim=2, index=expanded_indices)
-
+def torch_kernel(x: torch.Tensor) -> torch.Tensor:
+    return torch.transpose(x, 0, 1).contiguous()
 ```
 
 ## File: cases.yaml
 ```yaml
 dtypes:
-- float32
-shapes:
-- - 1000
-  - 2048
-  - 8
-- - 100
-  - 32
-  - 16
-- - 128
-  - 512
-  - 3
-- - 2048
-  - 64
-  - 64
-- - 32
-  - 128
-  - 32
-- - 50
-  - 128
-  - 4
-- - 512
-  - 64
-  - 5
-- - 80
-  - 256
-  - 10
+  - float32
 
+shapes:
+  # Square
+  - shape: [1024, 1024]
+    op_levels: 0  # f32_col2row
+  - shape: [1024, 1024]
+    op_levels: 2  # f32x4_col2row
+  - shape: [1024, 1024]
+    op_levels: 8  # f32x4_shared_col2row
+  - shape: [1024, 1024]
+    op_levels: 10 # f32x4_shared_bcf_col2row
+
+  # Tall
+  - shape: [4096, 1024]
+    op_levels: 2
+  - shape: [4096, 1024]
+    op_levels: 10
+    
+  # Wide
+  - shape: [1024, 4096]
+    op_levels: 2
+  - shape: [1024, 4096]
+    op_levels: 10
+    
+  # Large
+  - shape: [4096, 4096]
+    op_levels: 12 # f32x4_shared_bcf_merge_write
 ```
 
 ## File: get_data.py
@@ -188,47 +263,27 @@ from optest.tools.checker import SEED
 
 @dataclass
 class Params:
-    data_shape: tuple = (50, 128, 4)
-    num_indices: int = 4
+    input_shape: tuple = (24, 32, 48)
+    output_shape: tuple = (48, 24, 32)
 
 
 def get_cuda_argtypes():
     return [
-        ctypes.c_void_p,  # params
-        ctypes.c_void_p,  # indices
+        ctypes.c_void_p,  # input
         ctypes.c_void_p,  # output
-        ctypes.c_int,  # dim0
-        ctypes.c_int,  # dim1
-        ctypes.c_int,  # dim2
-        ctypes.c_int,  # num_indices
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,  # dimensions
     ]
 
 
 def get_cuda_torch_inputs(params: Params):
     torch.manual_seed(SEED)
-    params_tensor = torch.randn(params.data_shape, dtype=torch.float32, device="cuda")
-    indices = torch.randint(
-        0,
-        params.data_shape[-1],
-        (params.num_indices,),
-        dtype=torch.int64,
-        device="cuda",
-    )
-    output = torch.empty(
-        (params.data_shape[0], params.data_shape[1], params.num_indices),
-        dtype=torch.float32,
-        device="cuda",
-    )
-    cuda_all_inputs = [
-        params_tensor,
-        indices,
-        output,
-        params.data_shape[0],
-        params.data_shape[1],
-        params.data_shape[2],
-        params.num_indices,
-    ]
-    torch_all_inputs = [params_tensor, indices]
+    x = torch.randn(params.input_shape, dtype=torch.float32, device="cuda")
+    output = torch.empty(params.output_shape, dtype=torch.float32, device="cuda")
+    dim_args = list(params.input_shape)
+    cuda_all_inputs = [x, output, *dim_args]
+    torch_all_inputs = [x]
     return cuda_all_inputs, torch_all_inputs, [output]
 
 
@@ -256,7 +311,7 @@ sys.path.insert(0, TESTCASE_ROOT_DIR)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="gather_50_128_4 CUDA kernel test")
+    parser = argparse.ArgumentParser(description="transpose_24_32_48 CUDA kernel test")
     parser.add_argument(
         "--compile-only",
         action="store_true",
@@ -299,7 +354,9 @@ sys.path.insert(0, TESTCASE_ROOT_DIR)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="gather_50_128_4 Triton kernel test")
+    parser = argparse.ArgumentParser(
+        description="transpose_24_32_48 Triton kernel test"
+    )
     parser.add_argument(
         "--no-perf", action="store_true", help="Placeholder flag for compatibility"
     )

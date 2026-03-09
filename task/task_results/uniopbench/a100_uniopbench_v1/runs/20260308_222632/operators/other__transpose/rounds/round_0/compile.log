@@ -1,0 +1,10 @@
+
+================================================================================
+Testing Transpose operator with CUDA backend (single test mode)
+Shape: (1024, 1024)
+Dtype: torch.float32, Op Level: 13 -> Kernel OpType: 13
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded
