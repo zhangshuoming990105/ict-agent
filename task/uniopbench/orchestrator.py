@@ -72,7 +72,7 @@ class Logger:
         self._handle = self._path.open("a", encoding="utf-8")
 
     def log(self, message: str) -> None:
-        print(message)
+        print(message, flush=True)
         self._handle.write(message + "\n")
         self._handle.flush()
 
@@ -750,6 +750,7 @@ def run_uniopbench_task(args) -> int:
                         request_payload[key] = val
 
                 session_log_path = round_dir / "agent_session.log"
+                logger.log(f"[run] {operator} round {round_idx}: launching agent session (tail {session_log_path.relative_to(run_dir)} for live output)...")
                 session = LiveAgentSession(
                     task_config=task_config,
                     workspace_dir=artifact_dir,

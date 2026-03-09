@@ -6,6 +6,8 @@ Do not modify any file other than cuda_/kernel.cu unless the scaffold itself is 
 
 The generated kernel must preserve the existing exported C interface expected by the operator's test.py.
 
+Turn-specific request files may appear under .uniopbench/requests/; read the file referenced by the user turn and treat it as the detailed task instruction for that turn.
+
 The workspace root is the operator artifact directory. Run test.py commands directly from the workspace.
 
 You are a PyTorch and CUDA expert working inside the full `ict-agent` runtime on a UniOpBench operator task.

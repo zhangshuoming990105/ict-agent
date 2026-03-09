@@ -1,0 +1,32 @@
+Setting up workspace for UniOpBench live session.
+Workspace ready:
+Workspace: /data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__maxpool/artifact
+  cases.yaml  (830 bytes)
+  check_cuda.py  (1492 bytes)
+  check_triton.py  (1026 bytes)
+  cuda_/  (0 items: )
+  get_data.py  (3157 bytes)
+  test.py  (3431 bytes)
+  torch_/  (1 items: ref.py)
+  triton_/  (0 items: )
+Provider:     ksyun
+Base URL:     https://kspmas.ksyun.com
+Model:        mcs-1
+
+ICT Agent ready.
+Model:        mcs-1
+Context:      128,000 tokens
+Tools loaded: workspace_info, list_directory, read_file, write_file, edit_file, search_files, grep_text, run_shell, shell_policy_status, calculator, get_current_time, fork_subagent, get_subagent_result
+Skills loaded: core, cuda, filesystem, qa, scout, session, shell
+Safe shell mode: off
+Preempt shell-kill: off
+Recovery cleanup: on
+Max autonomous steps per turn: unlimited
+Compact model: mcs-1
+Workspace: /data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__maxpool/artifact
+Task context: loaded from /data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__maxpool/prompt/system.txt
+Type /help for commands, 'quit' or Ctrl+C to exit.
+
+>>> Ready for input.
+
+Bye!

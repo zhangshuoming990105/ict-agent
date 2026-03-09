@@ -1,6 +1,0 @@
-Run ID: codex_uniopbench_dryrun_check
-Config: /Users/qiuchu/Project/ict-agent/task/uniopbench/task.yaml
-Benchmark root: /Users/qiuchu/Project/ict-agent/benchmarks/UniOpBench
-[dry-run] prepared elementary/sin
-
-Success rate: 0/1
