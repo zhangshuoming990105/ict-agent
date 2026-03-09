@@ -16,6 +16,7 @@ It does not modify the upstream UniOpBench source tree. Instead, it:
 - [TASK.md](TASK.md): task prompt injected into the agent runtime
 - [orchestrator.py](orchestrator.py): benchmark runner implementation
 - [cli.py](cli.py): CLI argument parsing and entrypoint (invoked via `main.py --task uniopbench`)
+- [session_runner.py](session_runner.py): live-session bridge that boots the normal `chat()` runtime for one operator workspace
 
 ## Config
 
@@ -71,16 +72,18 @@ python main.py --task uniopbench --config task/uniopbench/task.yaml
 
 ## Execution Model
 
-Each operator runs in an **isolated agent session and context**:
+Each operator runs in an **isolated live agent workflow**:
 - **Workspace**: Each operator gets its own workspace (`artifact/` directory); no shared workspace across operators.
-- **Context**: Each batch turn creates a fresh `ContextManager`; no conversation history carries over between operators or rounds.
+- **Context**: Each repair round starts a fresh live `chat()` session. No conversation history is carried across rounds; only the regenerated round request file carries prior kernel/log context forward.
 
 For each operator, the orchestrator:
 1. copies the upstream operator into a run-local `artifact/` directory
-2. builds a task prompt from `TASK.md` plus the operator's `test.py`, `torch_/ref.py`, `cases.yaml`, and optional legacy helper files
-3. launches a single autonomous `ict-agent` batch turn with that operator's artifact as the workspace root
-4. lets the agent inspect files, edit `cuda_/kernel.cu`, and run the operator's native test commands
-5. if compile or correctness fails, feeds the prior round's kernel and logs into the next repair round (same operator, new turn with fresh context)
+2. builds a round system prompt from `TASK.md` plus the operator scaffold
+3. writes each round's detailed request into `artifact/.uniopbench/requests/round_<n>.md`
+4. launches the normal `ict-agent` live `chat()` runtime for that round with the operator's artifact as the workspace root
+5. sends one short user turn per repair round that tells the agent to read the corresponding request file
+6. lets the agent inspect files, edit `cuda_/kernel.cu`, and run the operator's native test commands
+7. if compile or correctness fails, writes a new repair request file with the prior kernel and logs, then starts a new live session for the next round
 
 Success is currently defined as:
 - `python test.py --compile-only` passes
@@ -110,6 +113,7 @@ The `experiment.name` comes from `task.yaml` (e.g. `a100_uniopbench_v1`). Each r
         user.txt
       rounds/
         round_0/
+          agent_session.log
           agent.log
           request.json
           response.json

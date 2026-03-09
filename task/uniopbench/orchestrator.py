@@ -5,17 +5,20 @@ from __future__ import annotations
 import json
 import os
 import re
+import select
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+import time
 from typing import Any
 
 import yaml
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+_READY_MARKER = ">>> Ready for input."
 
 
 def repo_root() -> Path:
@@ -42,10 +45,6 @@ def experiment_dir(experiment_name: str) -> Path:
 def runs_root(experiment_name: str) -> Path:
     """Return runs directory for the given experiment. Path includes experiment name from task.yaml."""
     return experiment_dir(experiment_name) / "runs"
-
-
-def src_root() -> Path:
-    return repo_root() / "src"
 
 
 def timestamp_run_id() -> str:
@@ -261,6 +260,7 @@ def build_prompt(
         "Use tools to inspect files, edit cuda_/kernel.cu, and run the existing test.py commands autonomously.",
         "Do not modify any file other than cuda_/kernel.cu unless the scaffold itself is broken.",
         "The generated kernel must preserve the existing exported C interface expected by the operator's test.py.",
+        "Turn-specific request files may appear under .uniopbench/requests/; read the file referenced by the user turn and treat it as the detailed task instruction for that turn.",
     ]
     if artifact_rel_path:
         system_parts.append(
@@ -318,15 +318,6 @@ def build_prompt(
     return "\n\n".join(system_parts), "\n".join(user_parts)
 
 
-def load_client(provider: str):
-    src = str(src_root())
-    if src not in sys.path:
-        sys.path.insert(0, src)
-    from ict_agent.llm import create_client
-
-    return create_client(provider)
-
-
 def _resolve_max_agent_steps(experiment: ExperimentConfig) -> int:
     """Resolve max_agent_steps: None = formula, 0 = unlimited."""
     if experiment.max_agent_steps is not None:
@@ -334,80 +325,262 @@ def _resolve_max_agent_steps(experiment: ExperimentConfig) -> int:
     return max(8, experiment.max_repair_rounds * 4)
 
 
-def run_agent_round(
-    task_config: TaskConfig,
-    workspace_dir: Path,
-    round_dir: Path,
-    system_prompt: str,
-    user_prompt: str,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    client, provider_name, default_model, base_url = load_client(task_config.experiment.provider)
-    model_name = task_config.experiment.model or default_model
-    from ict_agent.app.bootstrap import create_command_registry, create_domain_adapter, create_logger
-    from ict_agent.runtime.agent_loop import run_batch_turn
-    from ict_agent.tools import set_workspace_root
+@dataclass
+class UsageSnapshot:
+    requests: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
 
-    domain_adapter = create_domain_adapter(repo_root())
-    domain_adapter.workspace_root = workspace_dir
-    set_workspace_root(workspace_dir)
-    domain_adapter.task_prompt = (
-        "## Runtime Task Context Injection\n"
-        "Use this task context for the current autonomous turn.\n\n"
-        + system_prompt
-    )
-    domain_adapter.task_context_source = str(task_template_path())
-    logger = create_logger(round_dir / "agent.log")
-    request_payload = {
-        "provider": provider_name,
-        "base_url": base_url,
-        "model": model_name,
-        "max_tokens": task_config.experiment.max_tokens,
-        "workspace_root": str(workspace_dir),
-        "system_prompt": system_prompt,
-        "user_prompt": user_prompt,
-        "max_agent_steps": _resolve_max_agent_steps(task_config.experiment),
+
+def _parse_usage_snapshot(lines: list[str]) -> UsageSnapshot:
+    snapshot = UsageSnapshot()
+    patterns = {
+        "requests": r"^Requests:\s+([0-9,]+)$",
+        "prompt_tokens": r"^\s*Prompt:\s+([0-9,]+)\s+tokens$",
+        "completion_tokens": r"^\s*Completion:\s+([0-9,]+)\s+tokens$",
+        "total_tokens": r"^\s*Total:\s+([0-9,]+)\s+tokens$",
     }
-    for key in ("temperature", "top_p", "top_k"):
-        if (val := getattr(task_config.experiment, key)) is not None:
-            request_payload[key] = val
+    for raw_line in lines:
+        line = raw_line.strip()
+        for field_name, pattern in patterns.items():
+            match = re.match(pattern, line)
+            if match:
+                setattr(snapshot, field_name, int(match.group(1).replace(",", "")))
+    return snapshot
+
+
+def _usage_delta(current: UsageSnapshot, previous: UsageSnapshot) -> dict[str, int]:
+    return {
+        "prompt_tokens": max(0, current.prompt_tokens - previous.prompt_tokens),
+        "completion_tokens": max(0, current.completion_tokens - previous.completion_tokens),
+        "total_tokens": max(0, current.total_tokens - previous.total_tokens),
+    }
+
+
+def _parse_ctx_messages(lines: list[str]) -> list[dict[str, Any]] | None:
+    start_idx: int | None = None
+    for idx, raw_line in enumerate(lines):
+        if raw_line.strip() == "[":
+            start_idx = idx
+            break
+    if start_idx is None:
+        return None
+
+    json_lines: list[str] = []
+    for raw_line in lines[start_idx:]:
+        stripped = raw_line.strip()
+        if stripped == _READY_MARKER:
+            break
+        if raw_line.lstrip().startswith("//"):
+            continue
+        json_lines.append(raw_line.rstrip("\n"))
+
+    raw = "\n".join(json_lines).strip()
+    if not raw:
+        return None
+    end_idx = raw.rfind("]")
+    if end_idx < 0:
+        return None
     try:
-        result = run_batch_turn(
-            client=client,
-            model=model_name,
-            user_input=user_prompt,
-            max_tokens=128_000,
-            max_agent_steps=request_payload["max_agent_steps"],
-            safe_shell=False,
-            recovery_cleanup=True,
-            preempt_shell_kill=False,
-            compact_client=client,
-            compact_model=model_name,
-            logger=logger,
-            command_registry=create_command_registry(domain_adapter),
-            domain_adapter=domain_adapter,
-            skills_root=repo_root() / "skills",
-        )
-    finally:
-        logger.close()
-    response_payload = {
-        "assistant_content": result.assistant_content,
-        "response_model": result.response_model,
-        "steps": result.steps,
-        "tool_called": result.tool_called,
-        "had_failure": result.had_failure,
-        "error": result.error,
-        "ctx_messages": result.ctx_messages,
-        "token_usage": result.token_usage,
-    }
-    if result.ctx_messages:
-        from ict_agent.context import ContextManager
+        payload = json.loads(raw[: end_idx + 1])
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, list) else None
 
-        ctx = ContextManager(system_prompt="", max_tokens=128_000)
-        ctx.messages = result.ctx_messages
-        raw = ctx.format_debug()
-        plain = _ANSI_ESCAPE_RE.sub("", raw)
-        write_text(round_dir / "trajectory.log", plain)
-    return request_payload, response_payload
+
+def _parse_turn_result(lines: list[str]) -> tuple[str, str, bool, bool, str]:
+    assistant_content = ""
+    response_model = ""
+    tool_called = any("-> Calling tool:" in line for line in lines)
+    had_failure = any("[recovery] Detected failure" in line for line in lines)
+    error = ""
+    last_logged_error = ""
+
+    idx = 0
+    while idx < len(lines):
+        line = lines[idx].rstrip("\n")
+        if line.startswith("Assistant ["):
+            match = re.match(r"Assistant \[(.+?)\]:\s?(.*)$", line)
+            if match:
+                response_model = match.group(1)
+                content_lines = [match.group(2)] if match.group(2) else []
+                idx += 1
+                while idx < len(lines):
+                    next_line = lines[idx].rstrip("\n")
+                    if next_line.startswith("  [tokens:") or next_line.strip() == _READY_MARKER:
+                        break
+                    content_lines.append(next_line)
+                    idx += 1
+                assistant_content = "\n".join(content_lines).strip()
+                continue
+        if line.startswith("Error: "):
+            last_logged_error = line[len("Error: ") :].strip()
+        idx += 1
+
+    if "I reached the max autonomous step limit" in assistant_content:
+        error = "max_agent_steps_reached"
+    elif last_logged_error:
+        error = last_logged_error
+
+    return assistant_content, response_model, tool_called, had_failure, error
+
+
+def _snapshot_agent_log(session_log_path: Path, round_dir: Path) -> None:
+    if not session_log_path.is_file():
+        return
+    shutil.copy2(session_log_path, round_dir / "agent.log")
+
+
+class LiveAgentSession:
+    def __init__(
+        self,
+        task_config: TaskConfig,
+        workspace_dir: Path,
+        system_prompt_path: Path,
+        session_log_path: Path,
+    ) -> None:
+        runner_path = repo_root() / "task" / "uniopbench" / "session_runner.py"
+        cmd = [
+            sys.executable,
+            str(runner_path),
+            "--workspace",
+            str(workspace_dir),
+            "--system-prompt-file",
+            str(system_prompt_path),
+            "--log-path",
+            str(session_log_path),
+            "--provider",
+            task_config.experiment.provider,
+            "--model",
+            task_config.experiment.model,
+            "--max-tokens",
+            str(128_000),
+            "--max-agent-steps",
+            str(_resolve_max_agent_steps(task_config.experiment)),
+            "--compact-model",
+            task_config.experiment.model,
+        ]
+        self._proc = subprocess.Popen(
+            cmd,
+            cwd=repo_root(),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        self._session_log_path = session_log_path
+        self._usage_snapshot = UsageSnapshot()
+        self._last_output_tail: list[str] = []
+        self._read_until_ready(timeout_sec=120)
+
+    @property
+    def session_log_path(self) -> Path:
+        return self._session_log_path
+
+    def _remember_lines(self, lines: list[str]) -> None:
+        self._last_output_tail.extend(lines)
+        if len(self._last_output_tail) > 200:
+            self._last_output_tail = self._last_output_tail[-200:]
+
+    def _read_until_ready(self, timeout_sec: int) -> list[str]:
+        if self._proc.stdout is None:
+            raise RuntimeError("Live agent session stdout is unavailable.")
+        deadline = time.monotonic() + timeout_sec
+        lines: list[str] = []
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([self._proc.stdout], [], [], 1.0)
+            if not ready:
+                if self._proc.poll() is not None:
+                    break
+                continue
+            line = self._proc.stdout.readline()
+            if line == "":
+                if self._proc.poll() is not None:
+                    break
+                continue
+            lines.append(line)
+            if line.strip() == _READY_MARKER:
+                self._remember_lines(lines)
+                return lines
+        self._remember_lines(lines)
+        tail = "".join(self._last_output_tail[-40:])
+        raise TimeoutError(
+            "Timed out waiting for live agent readiness."
+            + (f"\nLast output:\n{tail}" if tail else "")
+        )
+
+    def send(self, message: str, timeout_sec: int = 1800) -> list[str]:
+        if "\n" in message:
+            raise ValueError("Live agent session only accepts single-line user inputs.")
+        if self._proc.stdin is None:
+            raise RuntimeError("Live agent session stdin is unavailable.")
+        if self._proc.poll() is not None:
+            raise RuntimeError(f"Live agent session exited with code {self._proc.returncode}.")
+        self._proc.stdin.write(message.rstrip("\n") + "\n")
+        self._proc.stdin.flush()
+        return self._read_until_ready(timeout_sec=timeout_sec)
+
+    def run_round(
+        self,
+        round_dir: Path,
+        request_payload: dict[str, Any],
+        live_user_input: str,
+    ) -> dict[str, Any]:
+        turn_output = self.send(live_user_input, timeout_sec=1800)
+        token_output = self.send("/tokens", timeout_sec=60)
+        raw_output = self.send("/debug raw", timeout_sec=60)
+
+        assistant_content, response_model, tool_called, had_failure, error = _parse_turn_result(
+            turn_output
+        )
+        usage_snapshot = _parse_usage_snapshot(token_output)
+        token_usage = _usage_delta(usage_snapshot, self._usage_snapshot)
+        steps = max(0, usage_snapshot.requests - self._usage_snapshot.requests)
+        self._usage_snapshot = usage_snapshot
+        ctx_messages = _parse_ctx_messages(raw_output)
+
+        response_payload = {
+            "assistant_content": assistant_content,
+            "response_model": response_model or request_payload["model"],
+            "steps": steps,
+            "tool_called": tool_called,
+            "had_failure": had_failure,
+            "error": error,
+            "ctx_messages": ctx_messages,
+            "token_usage": token_usage,
+            "cumulative_usage": {
+                "requests": usage_snapshot.requests,
+                "prompt_tokens": usage_snapshot.prompt_tokens,
+                "completion_tokens": usage_snapshot.completion_tokens,
+                "total_tokens": usage_snapshot.total_tokens,
+            },
+            "live_user_input": live_user_input,
+        }
+
+        if ctx_messages:
+            from ict_agent.context import ContextManager
+
+            ctx = ContextManager(system_prompt="", max_tokens=128_000)
+            ctx.messages = ctx_messages
+            plain = _ANSI_ESCAPE_RE.sub("", ctx.format_debug())
+            write_text(round_dir / "trajectory.log", plain)
+
+        _snapshot_agent_log(self._session_log_path, round_dir)
+        return response_payload
+
+    def close(self) -> None:
+        if self._proc.poll() is not None:
+            return
+        try:
+            if self._proc.stdin is not None:
+                self._proc.stdin.write("quit\n")
+                self._proc.stdin.flush()
+            self._proc.wait(timeout=10)
+        except Exception:
+            self._proc.kill()
+            self._proc.wait(timeout=5)
 
 
 def subprocess_env(task_config: TaskConfig) -> dict[str, str]:
@@ -541,6 +714,7 @@ def run_uniopbench_task(args) -> int:
                 logger.log(f"[dry-run] prepared {operator}")
                 continue
 
+            (artifact_dir / ".uniopbench" / "requests").mkdir(parents=True, exist_ok=True)
             for round_idx in range(task_config.experiment.max_repair_rounds + 1):
                 round_dir = rounds_dir / f"round_{round_idx}"
                 round_dir.mkdir(parents=True, exist_ok=True)
@@ -550,9 +724,47 @@ def run_uniopbench_task(args) -> int:
                 write_text(prompt_dir / "system.txt", system_prompt)
                 write_text(prompt_dir / "user.txt", user_prompt)
 
-                request_payload, response_payload = run_agent_round(
-                    task_config, artifact_dir, round_dir, system_prompt, user_prompt
+                request_rel_path = Path(".uniopbench") / "requests" / f"round_{round_idx}.md"
+                request_path = artifact_dir / request_rel_path
+                write_text(request_path, user_prompt)
+                live_user_input = (
+                    f"Read {request_rel_path.as_posix()} in the workspace root and follow its instructions autonomously. "
+                    "Use tools as needed, and reply with a short summary when you finish this turn."
                 )
+
+                request_payload = {
+                    "provider": task_config.experiment.provider,
+                    "model": task_config.experiment.model,
+                    "max_tokens": 128_000,
+                    "workspace_root": str(artifact_dir),
+                    "system_prompt": system_prompt,
+                    "user_prompt": user_prompt,
+                    "request_file": str(request_path),
+                    "live_user_input": live_user_input,
+                    "max_agent_steps": _resolve_max_agent_steps(task_config.experiment),
+                    "session_mode": "chat",
+                    "session_scope": "per_round",
+                }
+                for key in ("temperature", "top_p", "top_k"):
+                    if (val := getattr(task_config.experiment, key)) is not None:
+                        request_payload[key] = val
+
+                session_log_path = round_dir / "agent_session.log"
+                session = LiveAgentSession(
+                    task_config=task_config,
+                    workspace_dir=artifact_dir,
+                    system_prompt_path=prompt_dir / "system.txt",
+                    session_log_path=session_log_path,
+                )
+                try:
+                    response_payload = session.run_round(
+                        round_dir=round_dir,
+                        request_payload=request_payload,
+                        live_user_input=live_user_input,
+                    )
+                finally:
+                    session.close()
+
                 write_json(round_dir / "request.json", request_payload)
                 write_json(round_dir / "response.json", response_payload)
 
