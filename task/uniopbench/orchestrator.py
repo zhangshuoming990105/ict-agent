@@ -348,6 +348,17 @@ def run_agent_round(
     from ict_agent.runtime.agent_loop import chat
     from ict_agent.tools import set_workspace_root
 
+    # Ensure PYTHONPATH includes UniOpBench root so agent's run_shell can import optest
+    _broot = str(benchmark_root())
+    _pypath = os.environ.get("PYTHONPATH", "")
+    if _broot not in _pypath.split(os.pathsep):
+        os.environ["PYTHONPATH"] = _broot + (os.pathsep + _pypath if _pypath else "")
+    # Expose task-level env vars so agent's run_shell inherits them
+    os.environ["UNIOPBENCH_TASK_CUDA_ARCH"] = task_config.experiment.cuda_arch
+    os.environ["UNIOPBENCH_TASK_COMPILE_BASELINE"] = (
+        "1" if task_config.experiment.enable_torch_compile_baseline else "0"
+    )
+
     domain_adapter = create_domain_adapter(repo_root())
     domain_adapter.workspace_root = workspace_dir
     set_workspace_root(workspace_dir)
