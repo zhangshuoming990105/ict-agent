@@ -41,8 +41,8 @@ When stdin is piped (not a TTY), it is used as the initial user message: `cat pr
 ## Testing
 
 ```bash
-python -m pytest tests/unit tests/integration_mock_api -v        # 68 tests, no API
-ICT_AGENT_RUN_REAL_API=1 python -m pytest tests/integration_real_api -v  # 6 tests, needs API
+python -m pytest tests/unit tests/integration_mock_api -v        # 74 tests, no API
+ICT_AGENT_RUN_REAL_API=1 python -m pytest tests/integration_real_api -v  # 7 tests, needs API
 python scripts/run_mixed_e2e.py -v                               # lightweight live e2e (3 turns)
 ```
 
@@ -77,12 +77,14 @@ Use `--model gpt-oss-120b` for tests. Session IDs: 0=live_e2e, 1=fork_smoke, 2=e
 
 - **app/** — CLI (`cli.py`), bootstrap, config, live session (`live_session.py`)
 - **runtime/agent_loop.py** — Core loop. Key mechanisms:
+  - `chat()` — unified entry point for interactive, live session, and headless/batch modes (`headless=True`)
+  - `_run_single_turn()` — shared agent step loop (skill selection, model call, tool execution, recovery, autonomy); used by both interactive and headless
   - Dual streaming: `start_anthropic_streaming_call()` (Claude, with prompt caching) / `start_async_streaming_call()` (OpenAI)
   - `_openai_messages_to_anthropic()` / `_openai_tools_to_anthropic()` — format conversion at API boundary
   - Prompt caching: `cache_control` on system prompt (single merged block for Bedrock’s max-4 limit), last tool def, last user message (~90% input token savings)
   - `_maybe_persist_large_output()` — >30K char results saved to `.tool_outputs/`
   - `CORE_TOOLS` — 8 core tools; others injected on demand (fork tools on keyword match)
-  - `MAX_TOKENS_TOOL_TURN=2048` / `MAX_TOKENS_FINAL_TURN=8192`
+  - `MAX_TOKENS_TOOL_TURN=2048` (interactive) / `MAX_TOKENS_FINAL_TURN=8192` (always in headless)
   - Preemption, recovery, auto-compaction
 - **runtime/logging.py** — `RunLogger` with `print_streaming()` / `end_streaming()`
 - **tools.py** — `@tool` registry + shell safety (`SAFE_COMMANDS`, `BANNED_COMMAND_PATTERNS`, wildcard allowlist/denylist)

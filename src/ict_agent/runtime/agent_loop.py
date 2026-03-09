@@ -1030,6 +1030,18 @@ def wait_for_fork_threads(runtime_state: dict, timeout_sec: float = 60.0) -> boo
 
 
 @dataclass
+class _TurnOutcome:
+    """Result of a single agent turn (shared by interactive and headless modes)."""
+    content: str = ""
+    response_model: str = ""
+    steps: int = 0
+    tool_called: bool = False
+    had_failure: bool = False
+    preempted: bool = False
+    pending_input: str | None = None  # set when preempted with queued input
+
+
+@dataclass
 class BatchTurnResult:
     assistant_content: str
     response_model: str
@@ -1051,6 +1063,250 @@ def _token_usage_from_ctx(ctx: ContextManager) -> TokenUsage:
     )
 
 
+def _run_single_turn(
+    client: "OpenAI",
+    model: str,
+    ctx: ContextManager,
+    runtime_state: dict,
+    logger,
+    user_input: str,
+    tool_schema_map: dict,
+    all_tool_schemas: list[dict],
+    max_agent_steps: int,
+    no_truncate: bool,
+    recovery_cleanup: bool,
+    use_streaming: bool = True,
+    user_queue: "Queue | None" = None,
+    domain_adapter=None,
+    compact_client=None,
+    compact_model=None,
+) -> _TurnOutcome:
+    """Execute one user turn: skill selection, agent step loop, tool execution, recovery.
+
+    Shared by interactive (``use_streaming=True``, ``user_queue`` set) and
+    headless/batch (``use_streaming=False``, ``user_queue=None``) modes.
+    """
+    turn_start_index = len(ctx.messages)
+    ctx.add_user_message(user_input)
+
+    # --- Skill & tool selection ---
+    selected_skills = select_skills(user_input, runtime_state["skills"], runtime_state["pinned_skills"])
+    if use_streaming:
+        maybe_extend_skills_for_continuation(user_input, selected_skills, runtime_state)
+    selected_skill_names = [skill.name for skill in selected_skills]
+    active_tool_schemas = resolve_active_tool_schemas(selected_skills, tool_schema_map, all_tool_schemas)
+    _fork_keywords = ("fork", "subagent", "子代理", "并行")
+    if any(kw in user_input.lower() for kw in _fork_keywords):
+        for fork_tool_name in ("fork_subagent", "get_subagent_result"):
+            if fork_tool_name in tool_schema_map and not any(
+                t.get("function", {}).get("name") == fork_tool_name for t in active_tool_schemas
+            ):
+                active_tool_schemas = active_tool_schemas + [tool_schema_map[fork_tool_name]]
+    active_skill_prompt = build_skill_prompt(selected_skills)
+    runtime_state["active_skill_names"] = selected_skill_names
+    runtime_state["active_tool_schemas"] = active_tool_schemas
+    runtime_state["active_skill_prompt"] = active_skill_prompt
+
+    active_tool_names = [t.get("function", {}).get("name", "?") for t in active_tool_schemas]
+    if selected_skill_names:
+        logger.log(f"  [skills] active: {', '.join(selected_skill_names)}", level="debug")
+    logger.log(f"  [tools] sending {len(active_tool_schemas)} tools: {', '.join(active_tool_names)}", level="debug")
+
+    # --- Compaction check ---
+    overhead_tokens = ctx.estimate_tokens(str(active_tool_schemas)) + ctx.estimate_tokens(active_skill_prompt)
+    if ctx.needs_compaction(overhead_tokens=overhead_tokens):
+        logger.log("  (Context approaching limit, auto-compacting...)", level="system")
+        do_compact(
+            client, runtime_state["model"], ctx, logger,
+            current_overhead_tokens=overhead_tokens, level="low",
+            compact_client=compact_client, compact_model=compact_model,
+        )
+
+    # --- Agent step loop ---
+    likely_action_intent = has_action_intent(user_input) if use_streaming else has_action_intent(user_input)
+    autonomy_nudge = ""
+    did_call_tool = False
+    recovery = RecoveryState()
+    queued_input_while_waiting = False
+    outcome = _TurnOutcome()
+    set_autonomous_turn(True)
+
+    steps = range(max_agent_steps) if max_agent_steps > 0 else itertools.count()
+    for step_idx in steps:
+        try:
+            # --- Preemption check (interactive only) ---
+            if user_queue is not None:
+                pending_from_preempt = to_pending_input_from_preempt_event(
+                    dequeue_user_input_nowait(user_queue), ctx,
+                )
+                if pending_from_preempt:
+                    outcome.preempted = True
+                    outcome.pending_input = pending_from_preempt
+                    clear_preempt_request()
+                    logger.log(
+                        "  [preempt] "
+                        + (
+                            "Received terminal interrupt signal; finishing current turn."
+                            if pending_from_preempt == "quit"
+                            else "Received user input during autonomous loop; switching turns."
+                        ),
+                        level="system",
+                    )
+                    break
+
+            # --- Build request ---
+            request_messages = list(ctx.messages)
+            if autonomy_nudge:
+                request_messages.append({"role": "system", "content": autonomy_nudge})
+            if active_skill_prompt:
+                request_messages.append({"role": "system", "content": active_skill_prompt})
+
+            response_model = runtime_state["model"]
+
+            # --- Model call ---
+            if use_streaming:
+                turn_max_tokens = MAX_TOKENS_TOOL_TURN if (did_call_tool or step_idx > 0) else MAX_TOKENS_FINAL_TURN
+                model_client = get_client_for_model(client, response_model)
+                _streaming_fn = start_anthropic_streaming_call if is_anthropic_model(response_model) else start_async_streaming_call
+                async_call = _streaming_fn(
+                    client=model_client, model=response_model,
+                    request_messages=request_messages,
+                    active_tool_schemas=active_tool_schemas,
+                    max_tokens=turn_max_tokens, logger=logger,
+                )
+                # Poll with preemption detection while waiting for model
+                model_wait_deadline = time.monotonic() + 90
+                while not async_call.done.wait(0.1):
+                    if time.monotonic() > model_wait_deadline:
+                        async_call.error = TimeoutError("Model call timed out after 90s")
+                        async_call.done.set()
+                        break
+                    if user_queue is not None and outcome.pending_input is None:
+                        pending_from_preempt = to_pending_input_from_preempt_event(
+                            dequeue_user_input_nowait(user_queue), ctx,
+                        )
+                        if pending_from_preempt:
+                            outcome.pending_input = pending_from_preempt
+                            outcome.preempted = True
+                            queued_input_while_waiting = True
+                            clear_preempt_request()
+                            logger.log(
+                                "  [preempt] "
+                                + (
+                                    "Queued terminal interrupt while waiting model response; "
+                                    "will switch turns after the current response."
+                                    if pending_from_preempt == "quit"
+                                    else "Queued new input while waiting model response; "
+                                    "will switch turns after the current response."
+                                ),
+                                level="system",
+                            )
+                if async_call.error is not None:
+                    raise async_call.error
+                response = async_call.response
+                if response is None:
+                    raise RuntimeError("Model call ended without response.")
+            else:
+                # Headless: non-streaming, always use large max_tokens for code generation
+                response = request_model_response(
+                    client_or_router=client, model=response_model,
+                    request_messages=request_messages,
+                    active_tool_schemas=active_tool_schemas,
+                    max_tokens=MAX_TOKENS_FINAL_TURN,
+                )
+
+            ctx.record_usage(response.usage, overhead_tokens=overhead_tokens)
+
+            # --- Tool execution ---
+            tool_outcome = process_tool_calls(response, ctx, logger, no_truncate)
+            if tool_outcome.called:
+                did_call_tool = True
+                if tool_outcome.failures:
+                    recovery.record_failures(tool_outcome.failures, tool_outcome.failure_kinds)
+                    logger.log(
+                        f"  [recovery] Detected failure ({recovery.last_failure_kind}): "
+                        f"{tool_outcome.failures[-1]}",
+                        level="system",
+                    )
+                    autonomy_nudge = build_recovery_nudge(recovery)
+                else:
+                    recovery.unresolved_failure = False
+                    autonomy_nudge = ""
+                continue
+
+            # --- Final text response ---
+            content = response.choices[0].message.content or ""
+            should_continue = False
+            if likely_action_intent and (max_agent_steps <= 0 or step_idx < max_agent_steps - 1):
+                if not did_call_tool:
+                    logger.log("  [autonomy] Suppressed no-tool reply; continuing...", level="system")
+                    autonomy_nudge = AUTONOMY_NUDGE_TEXT
+                    should_continue = True
+                elif recovery.unresolved_failure:
+                    logger.log("  [recovery] Suppressed unresolved-failure reply; continuing...", level="system")
+                    autonomy_nudge = build_recovery_nudge(recovery)
+                    should_continue = True
+                elif is_procedural_confirmation(content):
+                    logger.log("  [autonomy] Suppressed procedural-confirmation reply; continuing...", level="system")
+                    autonomy_nudge = AUTONOMY_NUDGE_TEXT
+                    should_continue = True
+            if should_continue:
+                continue
+
+            ctx.add_assistant_message(content)
+            if use_streaming:
+                # Streaming already printed content; only log model tag + usage
+                if content:
+                    logger.log(f"  [{response_model}] {format_turn_usage(response.usage)}\n", level="info")
+                else:
+                    logger.log(f"\nAssistant [{response_model}]: (no content)", level="assistant")
+                    logger.log(f"  {format_turn_usage(response.usage)}\n", level="info")
+            else:
+                logger.log(f"\nAssistant [{response_model}]: {content}", level="assistant")
+                logger.log(f"  {format_turn_usage(response.usage)}\n", level="info")
+
+            if recovery_cleanup and recovery.had_failure:
+                removed = ctx.drop_failed_tool_messages(start_index=turn_start_index + 1)
+                if removed > 0:
+                    logger.log(
+                        f"  [recovery] Cleaned {removed} failed intermediate messages from context.\n",
+                        level="system",
+                    )
+            if domain_adapter is not None:
+                domain_adapter.try_save_history(content, ctx, logger)
+            if queued_input_while_waiting:
+                logger.log("  [preempt] Current response delivered; switching to queued input.\n", level="system")
+
+            outcome.content = content
+            outcome.response_model = response_model
+            outcome.steps = step_idx + 1
+            outcome.tool_called = did_call_tool
+            outcome.had_failure = recovery.had_failure
+            break
+        except Exception as exc:
+            logger.log(f"\nError: {exc}\n", level="error")
+            ctx.pop_last_message()
+            outcome.steps = step_idx + 1
+            break
+    else:
+        # Exhausted max_agent_steps
+        help_msg = (
+            f"I reached the max autonomous step limit ({max_agent_steps}) for this turn "
+            "and may be stuck. Please provide guidance, constraints, or the next action."
+        )
+        if recovery.failures:
+            help_msg += f" Latest failure: {recovery.failures[-1]}"
+        ctx.add_assistant_message(help_msg)
+        logger.log(f"\nAssistant: {help_msg}\n", level="assistant")
+        outcome.content = help_msg
+        outcome.response_model = model
+        outcome.steps = max_agent_steps
+        outcome.tool_called = did_call_tool
+        outcome.had_failure = recovery.had_failure
+
+    return outcome
+
+
 def chat(
     client: "OpenAI",
     model: str,
@@ -1067,7 +1323,8 @@ def chat(
     domain_adapter,
     skills_root: Path,
     no_truncate: bool = False,
-) -> None:
+    headless: bool = False,
+) -> BatchTurnResult | None:
     set_shell_safety(safe_shell)
     set_shell_interrupt_on_preempt(preempt_shell_kill)
     set_no_truncate(no_truncate)
@@ -1104,22 +1361,25 @@ def chat(
         "fork_threads": [],
     }
 
-    logger.log("ICT Agent ready.")
+    logger.log("ICT Agent batch turn started." if headless else "ICT Agent ready.")
     logger.log(f"Model:        {model}")
+    logger.log(f"Workspace:    {domain_adapter.workspace_root}" if headless else f"Workspace: {domain_adapter.workspace_root}")
     logger.log(f"Context:      {max_tokens:,} tokens")
-    logger.log(f"Tools loaded: {', '.join(tool['function']['name'] for tool in all_tool_schemas)}")
-    if skills:
-        logger.log(f"Skills loaded: {', '.join(sorted(skills.keys()))}")
-    logger.log(f"Safe shell mode: {'on' if safe_shell else 'off'}")
-    logger.log(f"Preempt shell-kill: {'on' if preempt_shell_kill else 'off'}")
-    logger.log(f"Recovery cleanup: {'on' if recovery_cleanup else 'off'}")
     logger.log(
+        f"Max steps:    {max_agent_steps if max_agent_steps > 0 else 'unlimited'}"
+        if headless else
         f"Max autonomous steps per turn: {max_agent_steps if max_agent_steps > 0 else 'unlimited'}"
     )
-    logger.log(f"Compact model: {compact_model or model}")
-    logger.log(f"Workspace: {domain_adapter.workspace_root}")
-    if no_truncate:
-        logger.log("No truncate: on (full output)")
+    if not headless:
+        logger.log(f"Tools loaded: {', '.join(tool['function']['name'] for tool in all_tool_schemas)}")
+        if skills:
+            logger.log(f"Skills loaded: {', '.join(sorted(skills.keys()))}")
+        logger.log(f"Safe shell mode: {'on' if safe_shell else 'off'}")
+        logger.log(f"Preempt shell-kill: {'on' if preempt_shell_kill else 'off'}")
+        logger.log(f"Recovery cleanup: {'on' if recovery_cleanup else 'off'}")
+        logger.log(f"Compact model: {compact_model or model}")
+        if no_truncate:
+            logger.log("No truncate: on (full output)")
     # System prompt preview (full when no_truncate, else first 12 lines)
     _preview = ctx.system_prompt.strip()
     _lines = _preview.split("\n")
@@ -1130,14 +1390,57 @@ def chat(
         if len(_lines) > 12:
             _sp_preview += f"\n... ({len(_lines) - 12} more lines, {len(_preview):,} chars total)"
     logger.log(f"System prompt:\n---\n{_sp_preview}\n---")
-    if domain_adapter.history_prompt:
-        logger.log("History: loaded previous implementation for reference")
-    if domain_adapter.task_context_source:
-        logger.log(f"Task context: loaded from {domain_adapter.task_context_source}")
-    if logger.is_live_session():
-        logger.log("Send messages via: ict-agent send <message>")
-    logger.log("Type /help for commands, 'quit' or Ctrl+C to exit.\n")
+    if not headless:
+        if domain_adapter.history_prompt:
+            logger.log("History: loaded previous implementation for reference")
+        if domain_adapter.task_context_source:
+            logger.log(f"Task context: loaded from {domain_adapter.task_context_source}")
+        if logger.is_live_session():
+            logger.log("Send messages via: ict-agent send <message>")
+        logger.log("Type /help for commands, 'quit' or Ctrl+C to exit.\n")
 
+    # --- Headless mode: single turn, no stdin, return BatchTurnResult ---
+    if headless:
+        user_input = (initial_message or "").strip()
+        if not user_input:
+            return BatchTurnResult(
+                assistant_content="", response_model=model, steps=0,
+                tool_called=False, had_failure=False, error="Empty user input",
+                ctx_messages=list(ctx.messages), token_usage=_token_usage_from_ctx(ctx),
+            )
+        try:
+            set_current_runtime(ctx=ctx, runtime_state=runtime_state, client=client, logger=logger)
+            outcome = _run_single_turn(
+                client=client, model=model, ctx=ctx,
+                runtime_state=runtime_state, logger=logger,
+                user_input=user_input,
+                tool_schema_map=tool_schema_map, all_tool_schemas=all_tool_schemas,
+                max_agent_steps=max_agent_steps,
+                no_truncate=no_truncate, recovery_cleanup=recovery_cleanup,
+                use_streaming=False, user_queue=None,
+            )
+            return BatchTurnResult(
+                assistant_content=outcome.content,
+                response_model=outcome.response_model,
+                steps=outcome.steps,
+                tool_called=outcome.tool_called,
+                had_failure=outcome.had_failure,
+                ctx_messages=list(ctx.messages),
+                token_usage=_token_usage_from_ctx(ctx),
+            )
+        except Exception as exc:
+            logger.log(f"\nError: {exc}\n", level="error")
+            return BatchTurnResult(
+                assistant_content="", response_model=model, steps=0,
+                tool_called=False, had_failure=False, error=str(exc),
+                ctx_messages=list(ctx.messages), token_usage=_token_usage_from_ctx(ctx),
+            )
+        finally:
+            set_autonomous_turn(False)
+            clear_preempt_request()
+            clear_current_runtime()
+
+    # --- Interactive mode ---
     user_queue: Queue[tuple[str, str]] = Queue()
     reader_stop_event = threading.Event()
     reader_thread = InputReaderThread(user_queue, reader_stop_event)
@@ -1202,470 +1505,28 @@ def chat(
 
             drain_fork_results(ctx, runtime_state)
             set_current_runtime(ctx=ctx, runtime_state=runtime_state, client=client, logger=logger)
-            turn_start_index = len(ctx.messages)
-            ctx.add_user_message(user_input)
 
-            selected_skills = select_skills(user_input, runtime_state["skills"], runtime_state["pinned_skills"])
-            maybe_extend_skills_for_continuation(user_input, selected_skills, runtime_state)
-            selected_skill_names = [skill.name for skill in selected_skills]
-            active_tool_schemas = resolve_active_tool_schemas(selected_skills, tool_schema_map, all_tool_schemas)
-            # Only inject fork tools when the user input mentions fork/subagent
-            _fork_keywords = ("fork", "subagent", "子代理", "并行")
-            if any(kw in user_input.lower() for kw in _fork_keywords):
-                for fork_tool_name in ("fork_subagent", "get_subagent_result"):
-                    if fork_tool_name in tool_schema_map and not any(
-                        t.get("function", {}).get("name") == fork_tool_name for t in active_tool_schemas
-                    ):
-                        active_tool_schemas = active_tool_schemas + [tool_schema_map[fork_tool_name]]
-            active_skill_prompt = build_skill_prompt(selected_skills)
-            runtime_state["active_skill_names"] = selected_skill_names
-            runtime_state["active_tool_schemas"] = active_tool_schemas
-            runtime_state["active_skill_prompt"] = active_skill_prompt
-
-            active_tool_names = [t.get("function", {}).get("name", "?") for t in active_tool_schemas]
-            if selected_skill_names:
-                logger.log(f"  [skills] active: {', '.join(selected_skill_names)}", level="debug")
-            logger.log(f"  [tools] sending {len(active_tool_schemas)} tools: {', '.join(active_tool_names)}", level="debug")
-
-            overhead_tokens = ctx.estimate_tokens(str(active_tool_schemas)) + ctx.estimate_tokens(active_skill_prompt)
-            if ctx.needs_compaction(overhead_tokens=overhead_tokens):
-                logger.log("  (Context approaching limit, auto-compacting...)", level="system")
-                do_compact(
-                    client,
-                    runtime_state["model"],
-                    ctx,
-                    logger,
-                    current_overhead_tokens=overhead_tokens,
-                    level="low",
-                    compact_client=compact_client,
-                    compact_model=compact_model,
-                )
-
-            # Autonomy suppression disabled; multiagent will handle orchestration.
-            likely_action_intent = False
-            autonomy_nudge = ""
-            did_call_tool = False
-            recovery = RecoveryState()
-            preempted = False
-            set_autonomous_turn(True)
-
-            steps = range(max_agent_steps) if max_agent_steps > 0 else itertools.count()
-            for step_idx in steps:
-                try:
-                    pending_from_preempt = to_pending_input_from_preempt_event(
-                        dequeue_user_input_nowait(user_queue),
-                        ctx,
-                    )
-                    if pending_from_preempt:
-                        pending_input = pending_from_preempt
-                        preempted = True
-                        clear_preempt_request()
-                        logger.log(
-                            "  [preempt] "
-                            + (
-                                "Received terminal interrupt signal; finishing current turn."
-                                if pending_input == "quit"
-                                else "Received user input during autonomous loop; switching turns."
-                            ),
-                            level="system",
-                        )
-                        break
-
-                    request_messages = list(ctx.messages)
-                    if autonomy_nudge:
-                        request_messages.append({"role": "system", "content": autonomy_nudge})
-                    if active_skill_prompt:
-                        request_messages.append({"role": "system", "content": active_skill_prompt})
-
-                    response_model = runtime_state["model"]
-                    turn_max_tokens = MAX_TOKENS_TOOL_TURN if (did_call_tool or step_idx > 0) else MAX_TOKENS_FINAL_TURN
-                    model_client = get_client_for_model(client, response_model)
-                    _streaming_fn = start_anthropic_streaming_call if is_anthropic_model(response_model) else start_async_streaming_call
-                    async_call = _streaming_fn(
-                        client=model_client,
-                        model=response_model,
-                        request_messages=request_messages,
-                        active_tool_schemas=active_tool_schemas,
-                        max_tokens=turn_max_tokens,
-                        logger=logger,
-                    )
-                    queued_input_while_waiting = False
-                    model_wait_deadline = time.monotonic() + 90  # 90s max per turn (avoid indefinite hang)
-                    while not async_call.done.wait(0.1):
-                        if time.monotonic() > model_wait_deadline:
-                            async_call.error = TimeoutError("Model call timed out after 90s")
-                            async_call.done.set()
-                            break
-                        if pending_input is None:
-                            pending_from_preempt = to_pending_input_from_preempt_event(
-                                dequeue_user_input_nowait(user_queue),
-                                ctx,
-                            )
-                            if pending_from_preempt:
-                                pending_input = pending_from_preempt
-                                preempted = True
-                                queued_input_while_waiting = True
-                                clear_preempt_request()
-                                logger.log(
-                                    "  [preempt] "
-                                    + (
-                                        "Queued terminal interrupt while waiting model response; "
-                                        "will switch turns after the current response."
-                                        if pending_input == "quit"
-                                        else "Queued new input while waiting model response; "
-                                        "will switch turns after the current response."
-                                    ),
-                                    level="system",
-                                )
-                    if async_call.error is not None:
-                        raise async_call.error
-                    response = async_call.response
-                    if response is None:
-                        raise RuntimeError("Model call ended without response.")
-                    ctx.record_usage(response.usage, overhead_tokens=overhead_tokens)
-
-                    tool_outcome = process_tool_calls(
-                        response, ctx, logger, runtime_state.get("no_truncate", False)
-                    )
-                    if tool_outcome.called:
-                        did_call_tool = True
-                        if tool_outcome.failures:
-                            recovery.record_failures(tool_outcome.failures, tool_outcome.failure_kinds)
-                            logger.log(
-                                f"  [recovery] Detected failure ({recovery.last_failure_kind}): "
-                                f"{tool_outcome.failures[-1]}",
-                                level="system",
-                            )
-                            autonomy_nudge = build_recovery_nudge(recovery)
-                        else:
-                            recovery.unresolved_failure = False
-                            autonomy_nudge = ""
-                        continue
-
-                    content = response.choices[0].message.content or ""
-                    should_continue = False
-                    if likely_action_intent and (
-                        max_agent_steps <= 0 or step_idx < max_agent_steps - 1
-                    ):
-                        if not did_call_tool:
-                            logger.log("  [autonomy] Suppressed no-tool reply; continuing...", level="system")
-                            autonomy_nudge = AUTONOMY_NUDGE_TEXT
-                            should_continue = True
-                        elif recovery.unresolved_failure:
-                            logger.log("  [recovery] Suppressed unresolved-failure reply; continuing...", level="system")
-                            autonomy_nudge = build_recovery_nudge(recovery)
-                            should_continue = True
-                        elif is_procedural_confirmation(content):
-                            logger.log("  [autonomy] Suppressed procedural-confirmation reply; continuing...", level="system")
-                            autonomy_nudge = AUTONOMY_NUDGE_TEXT
-                            should_continue = True
-                    if should_continue:
-                        continue
-
-                    ctx.add_assistant_message(content)
-                    # Streaming already printed content to terminal (with "Assistant: " prefix);
-                    # only log model tag + usage here.
-                    if content:
-                        logger.log(f"  [{response_model}] {format_turn_usage(response.usage)}\n", level="info")
-                    else:
-                        logger.log(f"\nAssistant [{response_model}]: (no content)", level="assistant")
-                        logger.log(f"  {format_turn_usage(response.usage)}\n", level="info")
-                    if runtime_state.get("recovery_cleanup", True) and recovery.had_failure:
-                        removed = ctx.drop_failed_tool_messages(start_index=turn_start_index + 1)
-                        if removed > 0:
-                            logger.log(
-                                f"  [recovery] Cleaned {removed} failed intermediate messages from context.\n",
-                                level="system",
-                            )
-                    domain_adapter.try_save_history(content, ctx, logger)
-                    if queued_input_while_waiting:
-                        logger.log("  [preempt] Current response delivered; switching to queued input.\n", level="system")
-                    break
-                except Exception as exc:
-                    logger.log(f"\nError: {exc}\n", level="error")
-                    ctx.pop_last_message()
-                    break
-            else:
-                help_msg = (
-                    f"I reached the max autonomous step limit ({max_agent_steps}) for this turn "
-                    "and may be stuck. Please provide guidance, constraints, or the next action."
-                )
-                if recovery.failures:
-                    help_msg += f" Latest failure: {recovery.failures[-1]}"
-                ctx.add_assistant_message(help_msg)
-                logger.log(f"\nAssistant: {help_msg}\n", level="assistant")
+            outcome = _run_single_turn(
+                client=client, model=model, ctx=ctx,
+                runtime_state=runtime_state, logger=logger,
+                user_input=user_input,
+                tool_schema_map=tool_schema_map, all_tool_schemas=all_tool_schemas,
+                max_agent_steps=max_agent_steps,
+                no_truncate=no_truncate, recovery_cleanup=recovery_cleanup,
+                use_streaming=True, user_queue=user_queue,
+                domain_adapter=domain_adapter,
+                compact_client=compact_client, compact_model=compact_model,
+            )
 
             set_autonomous_turn(False)
             clear_preempt_request()
-            if preempted:
+            if outcome.preempted:
+                pending_input = outcome.pending_input
                 continue
     finally:
         set_autonomous_turn(False)
         clear_preempt_request()
         reader_stop_event.set()
         reader_thread.join(timeout=1.0)
+    return None
 
-def run_batch_turn(
-    client: "OpenAI",
-    model: str,
-    user_input: str,
-    max_tokens: int,
-    max_agent_steps: int,
-    safe_shell: bool,
-    recovery_cleanup: bool,
-    preempt_shell_kill: bool,
-    compact_client: "OpenAI" | None,
-    compact_model: str | None,
-    logger,
-    command_registry,
-    domain_adapter,
-    skills_root: Path,
-    no_truncate: bool = False,
-) -> BatchTurnResult:
-    del command_registry  # Batch mode does not dispatch slash commands.
-
-    set_shell_safety(safe_shell)
-    set_shell_interrupt_on_preempt(preempt_shell_kill)
-    set_no_truncate(no_truncate)
-
-    system_prompt = domain_adapter.compose_system_prompt()
-    ctx = ContextManager(system_prompt=system_prompt, max_tokens=max_tokens)
-    all_tool_schemas = get_all_tool_schemas()
-    tool_schema_map = get_tool_schema_map()
-    skills = load_skills(skills_root)
-
-    default_selected_skills = select_skills("", skills, pinned_on=set())
-    default_tool_schemas = resolve_active_tool_schemas(
-        default_selected_skills, tool_schema_map, all_tool_schemas
-    )
-    default_skill_prompt = build_skill_prompt(default_selected_skills)
-    default_skill_names = [skill.name for skill in default_selected_skills]
-
-    runtime_state = {
-        "verbose": False,
-        "no_truncate": no_truncate,
-        "safe_shell": safe_shell,
-        "recovery_cleanup": recovery_cleanup,
-        "skills": skills,
-        "pinned_skills": set(),
-        "active_skill_names": default_skill_names,
-        "active_tool_schemas": default_tool_schemas,
-        "active_skill_prompt": default_skill_prompt,
-        "task_dir": domain_adapter.task_dir,
-        "preempt_shell_kill": preempt_shell_kill,
-        "compact_client": compact_client,
-        "compact_model": compact_model,
-        "model": model,
-        "fork_result_queue": Queue(),
-        "fork_job_counter": 0,
-        "fork_results": {},
-        "fork_threads": [],
-    }
-
-    logger.log("ICT Agent batch turn started.")
-    logger.log(f"Model:        {model}")
-    logger.log(f"Workspace:    {domain_adapter.workspace_root}")
-    logger.log(f"Context:      {max_tokens:,} tokens")
-    logger.log(
-        f"Max steps:    {max_agent_steps if max_agent_steps > 0 else 'unlimited'}"
-    )
-    _sp = ctx.system_prompt.strip()
-    _sp_lines = _sp.split("\n")
-    if no_truncate or (len(_sp_lines) <= 6 and len(_sp) <= 400):
-        _sp_preview = _sp
-    else:
-        _sp_preview = "\n".join(_sp_lines[:6])
-        if len(_sp_lines) > 6:
-            _sp_preview += f"\n... ({len(_sp_lines) - 6} more lines, {len(_sp):,} chars total)"
-    logger.log(f"System prompt:\n---\n{_sp_preview}\n---")
-
-    if not user_input.strip():
-        return BatchTurnResult(
-            assistant_content="",
-            response_model=model,
-            steps=0,
-            tool_called=False,
-            had_failure=False,
-            error="Empty user input",
-            ctx_messages=list(ctx.messages),
-            token_usage=_token_usage_from_ctx(ctx),
-        )
-
-    try:
-        set_current_runtime(ctx=ctx, runtime_state=runtime_state, client=client, logger=logger)
-        turn_start_index = len(ctx.messages)
-        ctx.add_user_message(user_input)
-
-        selected_skills = select_skills(
-            user_input, runtime_state["skills"], runtime_state["pinned_skills"]
-        )
-        active_tool_schemas = resolve_active_tool_schemas(
-            selected_skills, tool_schema_map, all_tool_schemas
-        )
-        for fork_tool_name in ("fork_subagent", "get_subagent_result"):
-            if fork_tool_name in tool_schema_map and not any(
-                t.get("function", {}).get("name") == fork_tool_name
-                for t in active_tool_schemas
-            ):
-                active_tool_schemas = active_tool_schemas + [tool_schema_map[fork_tool_name]]
-        active_skill_prompt = build_skill_prompt(selected_skills)
-        runtime_state["active_skill_names"] = [skill.name for skill in selected_skills]
-        runtime_state["active_tool_schemas"] = active_tool_schemas
-        runtime_state["active_skill_prompt"] = active_skill_prompt
-        active_tool_names = [t.get("function", {}).get("name", "?") for t in active_tool_schemas]
-        if runtime_state["active_skill_names"]:
-            logger.log(
-                f"  [skills] active: {', '.join(runtime_state['active_skill_names'])}",
-                level="debug",
-            )
-        logger.log(
-            f"  [tools] sending {len(active_tool_schemas)} tools: {', '.join(active_tool_names)}",
-            level="debug",
-        )
-
-        overhead_tokens = ctx.estimate_tokens(str(active_tool_schemas)) + ctx.estimate_tokens(
-            active_skill_prompt
-        )
-        if ctx.needs_compaction(overhead_tokens=overhead_tokens):
-            logger.log("  (Context approaching limit, auto-compacting...)", level="system")
-            do_compact(
-                client,
-                runtime_state["model"],
-                ctx,
-                logger,
-                current_overhead_tokens=overhead_tokens,
-                level="low",
-                compact_client=compact_client,
-                compact_model=compact_model,
-            )
-
-        likely_action_intent = has_action_intent(user_input)
-        autonomy_nudge = ""
-        did_call_tool = False
-        recovery = RecoveryState()
-        set_autonomous_turn(True)
-
-        steps = range(max_agent_steps) if max_agent_steps > 0 else itertools.count()
-        for step_idx in steps:
-            request_messages = list(ctx.messages)
-            if autonomy_nudge:
-                request_messages.append({"role": "system", "content": autonomy_nudge})
-            if active_skill_prompt:
-                request_messages.append({"role": "system", "content": active_skill_prompt})
-
-            response_model = runtime_state["model"]
-            turn_max_tokens = (
-                MAX_TOKENS_TOOL_TURN if (did_call_tool or step_idx > 0) else MAX_TOKENS_FINAL_TURN
-            )
-            response = request_model_response(
-                client_or_router=client,
-                model=response_model,
-                request_messages=request_messages,
-                active_tool_schemas=active_tool_schemas,
-                max_tokens=turn_max_tokens,
-            )
-            ctx.record_usage(response.usage, overhead_tokens=overhead_tokens)
-
-            tool_outcome = process_tool_calls(
-                response, ctx, logger, runtime_state.get("no_truncate", False)
-            )
-            if tool_outcome.called:
-                did_call_tool = True
-                if tool_outcome.failures:
-                    recovery.record_failures(
-                        tool_outcome.failures, tool_outcome.failure_kinds
-                    )
-                    logger.log(
-                        f"  [recovery] Detected failure ({recovery.last_failure_kind}): "
-                        f"{tool_outcome.failures[-1]}",
-                        level="system",
-                    )
-                    autonomy_nudge = build_recovery_nudge(recovery)
-                else:
-                    recovery.unresolved_failure = False
-                    autonomy_nudge = ""
-                continue
-
-            content = response.choices[0].message.content or ""
-            should_continue = False
-            if likely_action_intent and (
-                max_agent_steps <= 0 or step_idx < max_agent_steps - 1
-            ):
-                if not did_call_tool:
-                    logger.log(
-                        "  [autonomy] Suppressed no-tool reply; continuing...",
-                        level="system",
-                    )
-                    autonomy_nudge = AUTONOMY_NUDGE_TEXT
-                    should_continue = True
-                elif recovery.unresolved_failure:
-                    logger.log(
-                        "  [recovery] Suppressed unresolved-failure reply; continuing...",
-                        level="system",
-                    )
-                    autonomy_nudge = build_recovery_nudge(recovery)
-                    should_continue = True
-                elif is_procedural_confirmation(content):
-                    logger.log(
-                        "  [autonomy] Suppressed procedural-confirmation reply; continuing...",
-                        level="system",
-                    )
-                    autonomy_nudge = AUTONOMY_NUDGE_TEXT
-                    should_continue = True
-            if should_continue:
-                continue
-
-            ctx.add_assistant_message(content)
-            logger.log(f"\nAssistant [{response_model}]: {content}", level="assistant")
-            logger.log(f"  {format_turn_usage(response.usage)}\n", level="info")
-            if recovery_cleanup and recovery.had_failure:
-                removed = ctx.drop_failed_tool_messages(start_index=turn_start_index + 1)
-                if removed > 0:
-                    logger.log(
-                        f"  [recovery] Cleaned {removed} failed intermediate messages from context.\n",
-                        level="system",
-                    )
-            return BatchTurnResult(
-                assistant_content=content,
-                response_model=response_model,
-                steps=step_idx + 1,
-                tool_called=did_call_tool,
-                had_failure=recovery.had_failure,
-                ctx_messages=list(ctx.messages),
-                token_usage=_token_usage_from_ctx(ctx),
-            )
-
-        help_msg = (
-            f"I reached the max autonomous step limit ({max_agent_steps}) for this turn "
-            "and may be stuck. Please provide guidance, constraints, or the next action."
-        )
-        if recovery.failures:
-            help_msg += f" Latest failure: {recovery.failures[-1]}"
-        ctx.add_assistant_message(help_msg)
-        logger.log(f"\nAssistant [{model}]: {help_msg}", level="assistant")
-        return BatchTurnResult(
-            assistant_content=help_msg,
-            response_model=model,
-            steps=max_agent_steps,
-            tool_called=did_call_tool,
-            had_failure=recovery.had_failure,
-            error="max_agent_steps_reached",
-            ctx_messages=list(ctx.messages),
-            token_usage=_token_usage_from_ctx(ctx),
-        )
-    except Exception as exc:
-        logger.log(f"\nError: {exc}\n", level="error")
-        return BatchTurnResult(
-            assistant_content="",
-            response_model=model,
-            steps=0,
-            tool_called=False,
-            had_failure=False,
-            error=str(exc),
-            ctx_messages=list(ctx.messages),
-            token_usage=_token_usage_from_ctx(ctx),
-        )
-    finally:
-        set_autonomous_turn(False)
-        clear_preempt_request()
-        clear_current_runtime()

@@ -49,6 +49,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Resume a prior run id",
     )
+    parser.add_argument(
+        "--no-truncate",
+        action="store_true",
+        help="Disable truncation in agent output (full system prompt, full tool results)",
+    )
     return parser
 
 

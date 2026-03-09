@@ -340,11 +340,12 @@ def run_agent_round(
     round_dir: Path,
     system_prompt: str,
     user_prompt: str,
+    no_truncate: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     client, provider_name, default_model, base_url = load_client(task_config.experiment.provider)
     model_name = task_config.experiment.model or default_model
     from ict_agent.app.bootstrap import create_command_registry, create_domain_adapter, create_logger
-    from ict_agent.runtime.agent_loop import run_batch_turn
+    from ict_agent.runtime.agent_loop import chat
     from ict_agent.tools import set_workspace_root
 
     domain_adapter = create_domain_adapter(repo_root())
@@ -371,21 +372,23 @@ def run_agent_round(
         if (val := getattr(task_config.experiment, key)) is not None:
             request_payload[key] = val
     try:
-        result = run_batch_turn(
+        result = chat(
             client=client,
             model=model_name,
-            user_input=user_prompt,
             max_tokens=128_000,
             max_agent_steps=request_payload["max_agent_steps"],
             safe_shell=False,
             recovery_cleanup=True,
             preempt_shell_kill=False,
+            initial_message=user_prompt,
             compact_client=client,
             compact_model=model_name,
             logger=logger,
             command_registry=create_command_registry(domain_adapter),
             domain_adapter=domain_adapter,
             skills_root=repo_root() / "skills",
+            no_truncate=no_truncate,
+            headless=True,
         )
     finally:
         logger.close()
@@ -484,6 +487,7 @@ def run_uniopbench_task(args) -> int:
     config_path = Path(args.config).resolve() if args.config else task_config_path()
     operators_override = args.operators.split(",") if args.operators else None
     task_config = load_task_config(config_path, operators_override=operators_override)
+    no_truncate = getattr(args, "no_truncate", False)
 
     run_id = args.run_id or timestamp_run_id()
     run_dir = runs_root(task_config.experiment.name) / run_id
@@ -550,7 +554,8 @@ def run_uniopbench_task(args) -> int:
                 write_text(prompt_dir / "user.txt", user_prompt)
 
                 request_payload, response_payload = run_agent_round(
-                    task_config, artifact_dir, round_dir, system_prompt, user_prompt
+                    task_config, artifact_dir, round_dir, system_prompt, user_prompt,
+                    no_truncate=no_truncate,
                 )
                 write_json(round_dir / "request.json", request_payload)
                 write_json(round_dir / "response.json", response_payload)

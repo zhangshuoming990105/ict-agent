@@ -17,3 +17,4 @@ cuda_extension.so
 .tool_outputs/
 output.txt
 .openclaw/
+task/task_results/
