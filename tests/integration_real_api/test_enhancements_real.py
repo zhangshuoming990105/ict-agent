@@ -31,6 +31,16 @@ ANTHROPIC_MODEL = "mcs-1"
 # gpt-oss-120b is a reasoning model: needs enough tokens for reasoning + answer
 OPENAI_MAX_TOKENS = 256
 
+try:
+    import anthropic  # noqa: F401
+    _has_anthropic = True
+except ImportError:
+    _has_anthropic = False
+
+skip_unless_anthropic = pytest.mark.skipif(
+    not _has_anthropic, reason="anthropic package not installed"
+)
+
 
 def _get_router():
     """Return the ModelRouter from create_client (ksyun provider)."""
@@ -45,6 +55,7 @@ def _get_router():
 
 @real_api
 @skip_unless_real_api
+@skip_unless_anthropic
 def test_anthropic_streaming_text():
     """Anthropic streaming should deliver text via start_anthropic_streaming_call."""
     from ict_agent.runtime.agent_loop import start_anthropic_streaming_call
@@ -71,6 +82,7 @@ def test_anthropic_streaming_text():
 
 @real_api
 @skip_unless_real_api
+@skip_unless_anthropic
 def test_anthropic_streaming_tool_call():
     """Anthropic streaming should correctly accumulate tool_call chunks."""
     from ict_agent.runtime.agent_loop import start_anthropic_streaming_call, MAX_TOKENS_TOOL_TURN
@@ -105,6 +117,7 @@ def test_anthropic_streaming_tool_call():
 
 @real_api
 @skip_unless_real_api
+@skip_unless_anthropic
 def test_anthropic_prompt_caching():
     """Two consecutive calls with a long shared prefix should show cache activity."""
     from ict_agent.runtime.agent_loop import start_anthropic_streaming_call
@@ -226,6 +239,7 @@ def test_openai_streaming_tool_call():
 
 @real_api
 @skip_unless_real_api
+@skip_unless_anthropic
 def test_model_switch_dispatch():
     """ModelRouter should return the correct SDK client when model changes.
 
