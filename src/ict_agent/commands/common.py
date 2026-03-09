@@ -189,7 +189,8 @@ def handle_common_command(command: str, cmd_ctx) -> bool:
         )
         return True
     if cmd == "/history":
-        logger.log(f"\n{ctx.format_history()}\n")
+        no_truncate = runtime_state.get("no_truncate", False)
+        logger.log(f"\n{ctx.format_history(no_truncate=no_truncate)}\n")
         return True
     if cmd in ("/debug", "/debug raw"):
         logger.log(f"\n{ctx.format_raw() if cmd == '/debug raw' else ctx.format_debug()}\n")
@@ -296,7 +297,8 @@ def handle_common_command(command: str, cmd_ctx) -> bool:
             return True
         from ict_agent.runtime.agent_loop import run_fork_skill
 
-        logger.log(f"\nRunning fork skill '{skill_name}' with task: {task[:100]}{'...' if len(task) > 100 else ''}\n")
+        task_preview = task if runtime_state.get("no_truncate", False) else (task[:100] + "..." if len(task) > 100 else task)
+        logger.log(f"\nRunning fork skill '{skill_name}' with task: {task_preview}\n")
         result = run_fork_skill(
             client=client,
             model=model,
@@ -350,7 +352,7 @@ def handle_common_command(command: str, cmd_ctx) -> bool:
         from ict_agent.runtime.agent_loop import start_async_fork
 
         job_id = start_async_fork(runtime_state, client, model, skill, task, logger, return_mode=return_mode)
-        task_preview = task[:80] + "..." if len(task) > 80 else task
+        task_preview = task if runtime_state.get("no_truncate", False) else (task[:80] + "..." if len(task) > 80 else task)
         # Preserve user's command; record system flow so context shows what happened
         ctx.add_user_message(command)
         ctx.add_assistant_message(

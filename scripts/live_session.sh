@@ -69,7 +69,7 @@ is_running() {
   local pid
   pid="$(<"${PID_PATH}")"
   [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null && \
-    ps -p "${pid}" -o command= 2>/dev/null | grep -q 'main.py'
+    ps -p "${pid}" -o command= 2>/dev/null | grep -qE 'main\.py|ict-agent|ict_agent'
 }
 
 start_fifo_keeper() {

@@ -363,16 +363,14 @@ class ContextManager:
         self._last_prompt_local_tokens = 0
         self._last_overhead_tokens = 0
 
-    def format_history(self) -> str:
+    def format_history(self, no_truncate: bool = False) -> str:
         lines: list[str] = []
         for index, msg in enumerate(self.messages):
             role = msg["role"].upper()
             content = msg.get("content", "") or ""
             if role == "TOOL":
                 name = msg.get("name", "?")
-                preview = content[:80].replace("\n", "\\n")
-                if len(content) > 80:
-                    preview += "..."
+                preview = content if no_truncate else (content[:80].replace("\n", "\\n") + ("..." if len(content) > 80 else ""))
                 tokens = self._estimate_message_tokens(msg, include_metadata=True)
                 lines.append(f"  [{index:02d}] {role:10s} ~{tokens:>5d} tok | [{name}] {preview}")
             elif role == "ASSISTANT" and not content and msg.get("tool_calls"):
@@ -382,9 +380,7 @@ class ContextManager:
                     f"  [{index:02d}] {role:10s} ~{tokens:>5d} tok | -> called: {', '.join(names)}"
                 )
             else:
-                preview = content[:120].replace("\n", "\\n")
-                if len(content) > 120:
-                    preview += "..."
+                preview = content if no_truncate else (content[:120].replace("\n", "\\n") + ("..." if len(content) > 120 else ""))
                 tokens = self._estimate_message_tokens(msg, include_metadata=True)
                 lines.append(f"  [{index:02d}] {role:10s} ~{tokens:>5d} tok | {preview}")
         return "\n".join(lines)

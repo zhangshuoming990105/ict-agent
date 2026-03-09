@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -56,17 +57,39 @@ class RunLogger:
 
     def __init__(self, log_path: Path | None = None):
         self._file = None
+        self._live_file = None  # tee to .live_session/session_<id>/stdout.log when ICT_AGENT_LIVE_LOG set
         self._use_color = is_tty()
         self._streaming_started = False
         if log_path:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             self._file = open(log_path, "w", encoding="utf-8")
+        live_log = os.environ.get("ICT_AGENT_LIVE_LOG")
+        if live_log:
+            try:
+                Path(live_log).parent.mkdir(parents=True, exist_ok=True)
+                self._live_file = open(live_log, "a", encoding="utf-8", errors="replace")
+            except OSError:
+                pass
+
+    def is_live_session(self) -> bool:
+        """True when stdin is FIFO (agent reads from ict-agent send, not terminal)."""
+        return (
+            self._live_file is not None
+            or os.environ.get("ICT_AGENT_LIVE_SESSION") == "1"
+            or bool(os.environ.get("ICT_AGENT_SESSION_TTL"))
+        )
 
     def print_user_prompt(self) -> None:
         """Print colored 'You: ' prefix (no newline) before reading input. Only in TTY; avoids duplicate echo.
         Does not print RESET so terminal echo of user input stays in the same color; call reset_style() after reading.
+        In live session mode (stdin=FIFO), print hint to use ict-agent send instead of typing.
         """
-        if self._use_color:
+        if self.is_live_session():
+            print(
+                f"{self.LEVEL_COLORS.get('info', '')}Send messages via: ict-agent send <message>{self.RESET}",
+                flush=True,
+            )
+        elif self._use_color:
             print(f"{self.LEVEL_COLORS['user']}You: ", end="", flush=True)
 
     def reset_style(self) -> None:
@@ -92,11 +115,17 @@ class RunLogger:
             if self._file:
                 self._file.write(strip_ansi(msg) + "\n")
                 self._file.flush()
+            if self._live_file:
+                self._live_file.write(strip_ansi(msg) + "\n")
+                self._live_file.flush()
             return
         print(output_msg)
         if self._file:
             self._file.write(strip_ansi(msg) + "\n")
             self._file.flush()
+        if self._live_file:
+            self._live_file.write(strip_ansi(msg) + "\n")
+            self._live_file.flush()
 
     def print_streaming(self, text: str) -> None:
         """Print streaming text chunk without newline (for real-time model output).
@@ -114,6 +143,8 @@ class RunLogger:
                 sys.stdout.write(prefix)
             if self._file:
                 self._file.write(prefix)
+            if self._live_file:
+                self._live_file.write(prefix)
             self._streaming_started = True
         if self._use_color:
             color = self.LEVEL_COLORS.get("assistant", "")
@@ -124,6 +155,9 @@ class RunLogger:
         if self._file:
             self._file.write(strip_ansi(text))
             self._file.flush()
+        if self._live_file:
+            self._live_file.write(strip_ansi(text))
+            self._live_file.flush()
 
     def end_streaming(self) -> None:
         """Finish a streaming output with a newline and reset the prefix flag."""
@@ -132,9 +166,18 @@ class RunLogger:
         if self._file:
             self._file.write("\n")
             self._file.flush()
+        if self._live_file:
+            self._live_file.write("\n")
+            self._live_file.flush()
         self._streaming_started = False
 
     def close(self) -> None:
         if self._file:
             self._file.close()
             self._file = None
+        if self._live_file:
+            try:
+                self._live_file.close()
+            except OSError:
+                pass
+            self._live_file = None

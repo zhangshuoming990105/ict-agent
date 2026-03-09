@@ -37,7 +37,7 @@ from ict_agent.runtime.current_context import clear_current_runtime, get_current
 from ict_agent.llm import is_anthropic_model, get_client_for_model
 from ict_agent.skills import build_skill_prompt, load_skills, select_skills
 from ict_agent.skills import SkillSpec
-from ict_agent.tools import execute_tool, get_all_tool_schemas, get_tool_schema_map, set_shell_safety
+from ict_agent.tools import execute_tool, get_all_tool_schemas, get_tool_schema_map, set_no_truncate, set_shell_safety
 
 
 CONTINUATION_REPLIES = {
@@ -260,6 +260,10 @@ def _openai_tools_to_anthropic(tool_schemas: list[dict]) -> list[dict]:
     return out
 
 
+# Bedrock (and some gateways) allow at most 4 blocks with cache_control.
+# We use: 1 system (merged) + 1 last tool def + 1 last user block = 3.
+
+
 def _openai_messages_to_anthropic(
     openai_messages: list[dict],
 ) -> tuple[list[dict], list[dict]]:
@@ -269,12 +273,12 @@ def _openai_messages_to_anthropic(
     text content blocks (with ``cache_control``) and *messages* is the
     Anthropic ``messages`` parameter.
 
-    Cache breakpoints:
-    - System prompt gets ``cache_control`` (stable across turns).
+    Cache breakpoints (subject to provider limit, e.g. Bedrock max 4 blocks):
+    - System prompt gets ``cache_control`` (single merged block for compatibility).
     - The last user/tool-result message gets ``cache_control`` (caches the
       entire conversation prefix up to the current turn).
     """
-    system_blocks: list[dict] = []
+    system_parts: list[str] = []
     messages: list[dict] = []
 
     for msg in openai_messages:
@@ -282,12 +286,7 @@ def _openai_messages_to_anthropic(
         content = msg.get("content", "") or ""
 
         if role == "system":
-            # All system messages become system blocks with cache_control
-            system_blocks.append({
-                "type": "text",
-                "text": content,
-                "cache_control": _CACHE_CTRL,
-            })
+            system_parts.append(content)
 
         elif role == "user":
             messages.append({"role": "user", "content": content})
@@ -347,6 +346,15 @@ def _openai_messages_to_anthropic(
             c[-1]["cache_control"] = _CACHE_CTRL
         break
 
+    # Single system block with cache_control so total cache_control blocks stay ≤ 4
+    # (1 system + 1 last tool + 1 last user). Multiple system messages are merged.
+    system_blocks = []
+    if system_parts:
+        system_blocks = [{
+            "type": "text",
+            "text": "\n\n".join(system_parts),
+            "cache_control": _CACHE_CTRL,
+        }]
     return system_blocks, messages
 
 
@@ -749,7 +757,9 @@ def _maybe_persist_large_output(result: str, tool_name: str, logger) -> str:
         return result
 
 
-def process_tool_calls(response, ctx: ContextManager, logger) -> ToolExecutionOutcome:
+def process_tool_calls(
+    response, ctx: ContextManager, logger, no_truncate: bool = False
+) -> ToolExecutionOutcome:
     message = response.choices[0].message
     if not message.tool_calls:
         return ToolExecutionOutcome(called=False, failures=[], failure_kinds=[])
@@ -767,9 +777,15 @@ def process_tool_calls(response, ctx: ContextManager, logger) -> ToolExecutionOu
             continue
         logger.log(f"  -> Calling tool: {name}({args})", level="tool")
         result = execute_tool(name, args)
-        display = result if len(result) <= 2000 else result[:1000] + "\n...(truncated)...\n" + result[-500:]
+        display = (
+            result
+            if no_truncate or len(result) <= 2000
+            else result[:1000] + "\n...(truncated)...\n" + result[-500:]
+        )
         logger.log(f"  <- Result: {display}", level="result")
-        result_for_ctx = _maybe_persist_large_output(result, name, logger)
+        result_for_ctx = (
+            result if no_truncate else _maybe_persist_large_output(result, name, logger)
+        )
         ctx.add_tool_result(tool_call.id, name, result_for_ctx)
         if is_tool_failure(name, result):
             failures.append(summarize_failure(name, result))
@@ -826,6 +842,7 @@ def run_fork_skill(
     max_steps: int = 20,
     max_tokens: int = 128_000,
     return_mode: str = "final",
+    no_truncate: bool = False,
 ) -> str:
     """Run a fork (Agent as Skill) sub-agent: isolated context, skill's tools only, single task.
 
@@ -834,7 +851,8 @@ def run_fork_skill(
     Returns the final assistant message content, or full context string, or an error message.
     """
     fork_log = _ForkLogger(logger, f"[fork:{skill.name}]")
-    fork_log.log(f"Starting fork task: {task[:200]}{'...' if len(task) > 200 else ''}", level="system")
+    task_preview = task if no_truncate else (task[:200] + "..." if len(task) > 200 else task)
+    fork_log.log(f"Starting fork task: {task_preview}", level="system")
     ctx = ContextManager(system_prompt=skill.instructions or "Complete the user's task.", max_tokens=max_tokens)
     ctx.add_user_message(task)
     active_tool_schemas = resolve_active_tool_schemas([skill], tool_schema_map, all_tool_schemas)
@@ -870,7 +888,7 @@ def run_fork_skill(
                 response = async_call.response
             ctx.record_usage(response.usage, overhead_tokens=0)
 
-            tool_outcome = process_tool_calls(response, ctx, fork_log)
+            tool_outcome = process_tool_calls(response, ctx, fork_log, no_truncate)
             if tool_outcome.called:
                 continue
 
@@ -878,7 +896,8 @@ def run_fork_skill(
             last_content = content
             ctx.add_assistant_message(content)
             fork_log.log(f"Completed in {step_idx + 1} step(s).", level="system")
-            fork_log.log(content[:500] + ("..." if len(content) > 500 else ""), level="assistant")
+            content_preview = content if no_truncate else (content[:500] + "..." if len(content) > 500 else content)
+            fork_log.log(content_preview, level="assistant")
             if return_mode == "full_context":
                 return _serialize_fork_context(ctx.messages)
             return content
@@ -887,10 +906,8 @@ def run_fork_skill(
             fork_log.log(err_msg, level="error")
             return err_msg
 
-    msg = (
-        f"Fork reached max steps ({max_steps}) without final reply. "
-        + (f"Last content: {last_content[:300]}..." if len(last_content) > 300 else f"Last content: {last_content}")
-    )
+    last_preview = last_content if no_truncate else (last_content[:300] + "..." if len(last_content) > 300 else last_content)
+    msg = f"Fork reached max steps ({max_steps}) without final reply. Last content: {last_preview}"
     fork_log.log(msg, level="error")
     if return_mode == "full_context":
         return _serialize_fork_context(ctx.messages)
@@ -908,6 +925,7 @@ def _run_fork_in_thread(
     logger: Any,
     result_queue: "Queue[tuple[str, str, str]]",
     return_mode: str = "final",
+    no_truncate: bool = False,
 ) -> None:
     """Background thread: run run_fork_skill and put (job_id, skill_name, result) into result_queue."""
     try:
@@ -920,6 +938,7 @@ def _run_fork_in_thread(
             all_tool_schemas=all_tool_schemas,
             logger=logger,
             return_mode=return_mode,
+            no_truncate=no_truncate,
         )
         result_queue.put((job_id, skill.name, result))
     except Exception as exc:
@@ -967,9 +986,10 @@ def start_async_fork(
     job_id = str(counter + 1)
     tool_schema_map = get_tool_schema_map()
     all_tool_schemas = get_all_tool_schemas()
+    no_truncate = runtime_state.get("no_truncate", False)
     thread = threading.Thread(
         target=_run_fork_in_thread,
-        args=(job_id, skill, task, client, model, tool_schema_map, all_tool_schemas, logger, result_queue, return_mode),
+        args=(job_id, skill, task, client, model, tool_schema_map, all_tool_schemas, logger, result_queue, return_mode, no_truncate),
         daemon=True,
     )
     threads = runtime_state.setdefault("fork_threads", [])
@@ -1046,9 +1066,11 @@ def chat(
     command_registry,
     domain_adapter,
     skills_root: Path,
+    no_truncate: bool = False,
 ) -> None:
     set_shell_safety(safe_shell)
     set_shell_interrupt_on_preempt(preempt_shell_kill)
+    set_no_truncate(no_truncate)
 
     system_prompt = domain_adapter.compose_system_prompt()
     ctx = ContextManager(system_prompt=system_prompt, max_tokens=max_tokens)
@@ -1063,6 +1085,7 @@ def chat(
 
     runtime_state = {
         "verbose": False,
+        "no_truncate": no_truncate,
         "safe_shell": safe_shell,
         "recovery_cleanup": recovery_cleanup,
         "skills": skills,
@@ -1095,10 +1118,24 @@ def chat(
     )
     logger.log(f"Compact model: {compact_model or model}")
     logger.log(f"Workspace: {domain_adapter.workspace_root}")
+    if no_truncate:
+        logger.log("No truncate: on (full output)")
+    # System prompt preview (full when no_truncate, else first 12 lines)
+    _preview = ctx.system_prompt.strip()
+    _lines = _preview.split("\n")
+    if no_truncate or (len(_lines) <= 12 and len(_preview) <= 800):
+        _sp_preview = _preview
+    else:
+        _sp_preview = "\n".join(_lines[:12])
+        if len(_lines) > 12:
+            _sp_preview += f"\n... ({len(_lines) - 12} more lines, {len(_preview):,} chars total)"
+    logger.log(f"System prompt:\n---\n{_sp_preview}\n---")
     if domain_adapter.history_prompt:
         logger.log("History: loaded previous implementation for reference")
     if domain_adapter.task_context_source:
         logger.log(f"Task context: loaded from {domain_adapter.task_context_source}")
+    if logger.is_live_session():
+        logger.log("Send messages via: ict-agent send <message>")
     logger.log("Type /help for commands, 'quit' or Ctrl+C to exit.\n")
 
     user_queue: Queue[tuple[str, str]] = Queue()
@@ -1287,7 +1324,9 @@ def chat(
                         raise RuntimeError("Model call ended without response.")
                     ctx.record_usage(response.usage, overhead_tokens=overhead_tokens)
 
-                    tool_outcome = process_tool_calls(response, ctx, logger)
+                    tool_outcome = process_tool_calls(
+                        response, ctx, logger, runtime_state.get("no_truncate", False)
+                    )
                     if tool_outcome.called:
                         did_call_tool = True
                         if tool_outcome.failures:
@@ -1381,11 +1420,13 @@ def run_batch_turn(
     command_registry,
     domain_adapter,
     skills_root: Path,
+    no_truncate: bool = False,
 ) -> BatchTurnResult:
     del command_registry  # Batch mode does not dispatch slash commands.
 
     set_shell_safety(safe_shell)
     set_shell_interrupt_on_preempt(preempt_shell_kill)
+    set_no_truncate(no_truncate)
 
     system_prompt = domain_adapter.compose_system_prompt()
     ctx = ContextManager(system_prompt=system_prompt, max_tokens=max_tokens)
@@ -1402,6 +1443,7 @@ def run_batch_turn(
 
     runtime_state = {
         "verbose": False,
+        "no_truncate": no_truncate,
         "safe_shell": safe_shell,
         "recovery_cleanup": recovery_cleanup,
         "skills": skills,
@@ -1427,6 +1469,15 @@ def run_batch_turn(
     logger.log(
         f"Max steps:    {max_agent_steps if max_agent_steps > 0 else 'unlimited'}"
     )
+    _sp = ctx.system_prompt.strip()
+    _sp_lines = _sp.split("\n")
+    if no_truncate or (len(_sp_lines) <= 6 and len(_sp) <= 400):
+        _sp_preview = _sp
+    else:
+        _sp_preview = "\n".join(_sp_lines[:6])
+        if len(_sp_lines) > 6:
+            _sp_preview += f"\n... ({len(_sp_lines) - 6} more lines, {len(_sp):,} chars total)"
+    logger.log(f"System prompt:\n---\n{_sp_preview}\n---")
 
     if not user_input.strip():
         return BatchTurnResult(
@@ -1515,7 +1566,9 @@ def run_batch_turn(
             )
             ctx.record_usage(response.usage, overhead_tokens=overhead_tokens)
 
-            tool_outcome = process_tool_calls(response, ctx, logger)
+            tool_outcome = process_tool_calls(
+                response, ctx, logger, runtime_state.get("no_truncate", False)
+            )
             if tool_outcome.called:
                 did_call_tool = True
                 if tool_outcome.failures:

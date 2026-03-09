@@ -30,6 +30,14 @@ The `ict-agent` command is registered via `[project.scripts]` in pyproject.toml;
 
 When stdin is piped (not a TTY), it is used as the initial user message: `cat prompt.txt | ict-agent`.
 
+### Live session
+
+`ict-agent start/send/status/stop/paths` manages live sessions natively in Python. Start creates fifo, keeper, runs agent with stdin from fifo; RunLogger tees to `.live_session/session_<id>/stdout.log` via ICT_AGENT_LIVE_LOG. Send messages via `ict-agent send <message>` — stdin is FIFO, not terminal. See `docs/live_session.md`.
+
+### No truncate
+
+`--no-truncate` disables all truncation: full system prompt at startup, full tool results (read_file, list_directory, search_files, grep_text), no large-output persist to `.tool_outputs/`, full /history output.
+
 ## Testing
 
 ```bash
@@ -40,24 +48,25 @@ python scripts/run_mixed_e2e.py -v                               # lightweight l
 
 ### Live Session E2E Pattern
 
-The agent runs as a background process via FIFO pipe. `scripts/live_session.sh` manages sessions under `.live_session/session_<ID>/`:
+The agent runs as a background process with stdin from a FIFO pipe. `ict-agent start` creates the FIFO, keeper process, and launches the agent natively in Python. Session state lives under `.live_session/session_<ID>/`.
 
 ```python
-# 1. Start
-subprocess.Popen(["bash", "scripts/live_session.sh", "--session-id", "0", "start", "--model", "gpt-oss-120b"])
+# 1. Start (native Python — no bash script needed)
+subprocess.Popen(["ict-agent", "start", "--session-id", "0", "--model", "gpt-oss-120b"])
 
 # 2. Wait for ready (polls log for ">>> Ready for input.")
+log_path = root / ".live_session" / "session_0" / "stdout.log"
 wait_ready(log_path, min_count=1, timeout_sec=90)
 
 # 3. Send + wait
-live_send(session_id, "your message")
+subprocess.run(["ict-agent", "send", "--session-id", "0", "your message"])
 wait_ready(log_path, min_count=2, timeout_sec=90)  # each turn increments count by 1
 
 # 4. Assert on log
 assert "Calling tool: read_file" in log_path.read_text()
 
 # 5. Quit
-live_send(session_id, "quit")
+subprocess.run(["ict-agent", "send", "--session-id", "0", "quit"])
 ```
 
 Use `--model gpt-oss-120b` for tests. Session IDs: 0=live_e2e, 1=fork_smoke, 2=enhancements, 3=multi_fork, 4=mixed_e2e.
@@ -66,11 +75,11 @@ Use `--model gpt-oss-120b` for tests. Session IDs: 0=live_e2e, 1=fork_smoke, 2=e
 
 ### Source (`src/ict_agent/`)
 
-- **app/** — CLI (`cli.py`), bootstrap, config
+- **app/** — CLI (`cli.py`), bootstrap, config, live session (`live_session.py`)
 - **runtime/agent_loop.py** — Core loop. Key mechanisms:
   - Dual streaming: `start_anthropic_streaming_call()` (Claude, with prompt caching) / `start_async_streaming_call()` (OpenAI)
   - `_openai_messages_to_anthropic()` / `_openai_tools_to_anthropic()` — format conversion at API boundary
-  - Prompt caching: `cache_control` on system prompt, last tool def, last user message (~90% input token savings)
+  - Prompt caching: `cache_control` on system prompt (single merged block for Bedrock’s max-4 limit), last tool def, last user message (~90% input token savings)
   - `_maybe_persist_large_output()` — >30K char results saved to `.tool_outputs/`
   - `CORE_TOOLS` — 8 core tools; others injected on demand (fork tools on keyword match)
   - `MAX_TOKENS_TOOL_TURN=2048` / `MAX_TOKENS_FINAL_TURN=8192`

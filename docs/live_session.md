@@ -44,76 +44,71 @@
 - `.live_session/session_<id>/pid`
 - `logs/session_<id>/<timestamp>.log`
 
+**重要**：FIFO、pid 等管道和状态文件**只有**通过 `ict-agent start` 子命令启动时才会被创建。若直接运行 `ict-agent` 或 `ict-agent --session-id 0`，CLI 只会用 `session_id` 写 `logs/session_<id>/` 下的日志，**不会**创建或使用 `.live_session/` 下的任何内容。所以若发现 session_0 里没有 stdin.fifo、pid 等，说明当前进程不是用 `ict-agent start` 起的，需要先停掉再用 `ict-agent start` 启动。
+
 ## 最常用命令
+
+Live session 通过 `ict-agent` 子命令管理，全部用 Python 原生实现（不依赖 bash 脚本）：
+
+```bash
+ict-agent start  [--session-id ID] [--ttl SEC] [agent 参数...]   # 创建 FIFO + keeper，启动 agent
+ict-agent send   [--session-id ID] "消息"                         # 向 FIFO 注入消息
+ict-agent status [--session-id ID]                                # 查看是否运行中
+ict-agent stop   [--session-id ID]                                # 优雅关闭
+ict-agent paths  [--session-id ID]                                # 显示 fifo/log/pid 路径
+```
+
+`scripts/live_session.sh` 仍可用作备选，但 `ict-agent start` 是推荐入口。
 
 ### 启动
 
 ```bash
 cd ict-agent
-bash scripts/live_session.sh start
-```
-
-指定 session：
-
-```bash
-bash scripts/live_session.sh --session-id 1 start
-```
-
-指定 TTL：
-
-```bash
-bash scripts/live_session.sh --session-id 1 --ttl 120 start
+ict-agent start                                    # 默认 session_id=0, ttl=3600
+ict-agent start --session-id 1                     # 指定 session
+ict-agent start --session-id 1 --ttl 120           # 指定 TTL
+ict-agent start --session-id 1 --model gpt-oss-120b  # 额外 agent 参数直接传递
 ```
 
 ### 发送消息
 
-```bash
-bash scripts/live_session.sh send "现在几点？"
-```
-
-指定 session：
+**重要**：`ict-agent start` 启动后，agent 的 stdin 是 FIFO，不是终端。在终端里直接打字不会传给 agent，必须用 `ict-agent send` 发送：
 
 ```bash
-bash scripts/live_session.sh --session-id 1 send "你是谁？"
+ict-agent send "现在几点？"
+ict-agent send --session-id 1 "你是谁？"
 ```
 
 ### 查看状态
 
 ```bash
-bash scripts/live_session.sh status
-bash scripts/live_session.sh --session-id 1 status
+ict-agent status
+ict-agent status --session-id 1
 ```
 
 ### 查看路径
 
 ```bash
-bash scripts/live_session.sh paths
-bash scripts/live_session.sh --session-id 1 paths
+ict-agent paths
+ict-agent paths --session-id 1
 ```
 
 ## 关闭一个 Session
 
-### 推荐方式：可靠关闭
+### 推荐方式
 
 ```bash
-bash scripts/close_session.sh --session-id 0
+ict-agent stop --session-id 0
 ```
 
-这个脚本会：
+`ict-agent stop` 会：
 
-1. 先发 `quit`
-2. 等待 session 正常退出
-3. 若超时仍未退出，再回退到强制 stop
+1. 先通过 FIFO 发 `quit`
+2. 等待 5 秒让 agent 正常退出
+3. 若超时仍未退出，SIGKILL 强杀
+4. 清理 keeper、TTL timer、stale pid 文件
 
-这是最推荐的关闭方式。
-
-### 底层方式：直接 stop
-
-```bash
-bash scripts/live_session.sh --session-id 0 stop
-```
-
-这个方式更底层，适合作为兜底，不建议作为首选。
+也可以用 `bash scripts/close_session.sh --session-id 0`（先发 quit，再回退到 stop）。
 
 ## 清理 `.live_session`
 
@@ -185,15 +180,15 @@ bash scripts/reset_live_session.sh
 ### 并行启动两个主 agent
 
 ```bash
-bash scripts/live_session.sh --session-id 0 start
-bash scripts/live_session.sh --session-id 1 start
+ict-agent start --session-id 0
+ict-agent start --session-id 1
 ```
 
 ### 分别给它们发消息
 
 ```bash
-bash scripts/live_session.sh --session-id 0 send "你扮演一个用户。"
-bash scripts/live_session.sh --session-id 1 send "你扮演一个助手。"
+ict-agent send --session-id 0 "你扮演一个用户。"
+ict-agent send --session-id 1 "你扮演一个助手。"
 ```
 
 ### 列出当前所有 session
@@ -244,12 +239,11 @@ bash scripts/read_session_output.sh --session-id 1 --assistant-only
 
 如果你让另一个 agent 来驱动主 agent，推荐流程是：
 
-1. `bash scripts/list_sessions.sh`
-2. 确认自己当前的 `session_id`
-3. 确认目标 session 的 `session_id`
-4. 用 `bash scripts/live_session.sh --session-id X send "..."` 发消息
-5. 用 `bash scripts/read_session_output.sh --session-id X --assistant-only` 读回复
-6. 决定下一轮继续问什么
+1. `ict-agent status --session-id X` 或 `bash scripts/list_sessions.sh` 确认目标 session
+2. `ict-agent send --session-id X "..."` 发消息
+3. 读取 `.live_session/session_X/stdout.log` 或 `bash scripts/read_session_output.sh --session-id X --assistant-only` 读回复
+4. 轮询 `">>> Ready for input."` 判断 turn 完成
+5. 决定下一轮继续问什么
 
 ## 相关脚本速查
 

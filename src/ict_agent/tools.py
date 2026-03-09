@@ -14,6 +14,13 @@ from pathlib import Path
 from typing import Callable
 
 from ict_agent.runtime.preemption import is_preempt_requested, shell_interrupt_on_preempt
+
+_NO_TRUNCATE = False
+
+
+def set_no_truncate(enabled: bool) -> None:
+    global _NO_TRUNCATE
+    _NO_TRUNCATE = bool(enabled)
 from ict_agent.utils.edit_diff import (
     detect_line_ending,
     fuzzy_find_text,
@@ -429,7 +436,6 @@ def workspace_info() -> str:
     },
 )
 def list_directory(path: str = ".", include_hidden: bool = False, max_entries: int = 200) -> str:
-    max_entries = max(1, min(max_entries, 500))
     target = _resolve_in_workspace(path)
     if not target.exists():
         return f"Error: directory not found: {_rel(target)}"
@@ -438,12 +444,13 @@ def list_directory(path: str = ".", include_hidden: bool = False, max_entries: i
     entries = sorted(target.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
     if not include_hidden:
         entries = [entry for entry in entries if not entry.name.startswith(".")]
+    max_entries = len(entries) if _NO_TRUNCATE else max(1, min(max_entries, 500))
     lines = [f"Directory: {_rel(target)}"]
     for entry in entries[:max_entries]:
         kind = "dir " if entry.is_dir() else "file"
         size = "-" if entry.is_dir() else str(entry.stat().st_size)
         lines.append(f"{kind:4}  {size:>8}  {_rel(entry)}")
-    if len(entries) > max_entries:
+    if not _NO_TRUNCATE and len(entries) > max_entries:
         lines.append(f"... ({len(entries) - max_entries} more entries)")
     return "\n".join(lines)
 
@@ -467,7 +474,6 @@ def read_file(path: str, start_line: int = 1, max_lines: int = 200) -> str:
         return f"Error: file not found: {_rel(target)}"
     if not target.is_file():
         return f"Error: not a file: {_rel(target)}"
-    max_lines = max(1, min(max_lines, 500))
     start_line = max(1, start_line)
     try:
         content = target.read_text(encoding="utf-8", errors="replace")
@@ -479,11 +485,12 @@ def read_file(path: str, start_line: int = 1, max_lines: int = 200) -> str:
     start_idx = start_line - 1
     if start_idx >= len(lines):
         return f"Error: start_line {start_line} exceeds file length {len(lines)}"
-    end_idx = min(start_idx + max_lines, len(lines))
+    effective_max = len(lines) - start_idx if _NO_TRUNCATE else min(max_lines, 500)
+    end_idx = min(start_idx + effective_max, len(lines))
     out = [f"File: {_rel(target)} (lines {start_line}-{end_idx} of {len(lines)})"]
     for index in range(start_idx, end_idx):
         out.append(f"{index + 1}|{lines[index]}")
-    if end_idx < len(lines):
+    if not _NO_TRUNCATE and end_idx < len(lines):
         out.append(f"... ({len(lines) - end_idx} more lines)")
     return "\n".join(out)
 
@@ -627,7 +634,8 @@ def search_files(
     case_sensitive: bool = True,
 ) -> str:
     target = _resolve_in_workspace(path)
-    max_results = max(1, min(max_results, 200))
+    cap = 100_000 if _NO_TRUNCATE else 200
+    max_results = max(1, min(max_results, cap))
     cmd = ["rg", "-n", pattern, str(target)]
     if glob:
         cmd.extend(["--glob", glob])
@@ -644,10 +652,11 @@ def search_files(
     matches = [line for line in result.stdout.splitlines() if line.strip()]
     if not matches:
         return "No matches found."
+    effective_max = len(matches) if _NO_TRUNCATE else max_results
     out = [f"Search root: {_rel(target) if target.exists() else path}", f"Pattern: {pattern}"]
-    out.extend(matches[:max_results])
-    if len(matches) > max_results:
-        out.append(f"... ({len(matches) - max_results} more matches)")
+    out.extend(matches[:effective_max])
+    if not _NO_TRUNCATE and len(matches) > effective_max:
+        out.append(f"... ({len(matches) - effective_max} more matches)")
     return "\n".join(out)
 
 

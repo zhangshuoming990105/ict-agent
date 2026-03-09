@@ -18,6 +18,7 @@ ict-agent --sandbox                   # process-level sandbox (bubblewrap/seatbe
 ict-agent "fix the bug"               # initial user message (positional)
 ict-agent --append-system-prompt-file ./rules.txt   # append custom rules
 cat prompt.txt | ict-agent            # stdin as initial message
+ict-agent --no-truncate               # full output (no truncation)
 ```
 
 The `ict-agent` command is installed via pip; use `python main.py` as fallback.
@@ -38,7 +39,7 @@ The `ict-agent` command is installed via pip; use `python main.py` as fallback.
 ict-agent/
 ├── main.py                  # CLI entrypoint
 ├── src/ict_agent/
-│   ├── app/                 # CLI, bootstrap, config
+│   ├── app/                 # CLI, bootstrap, config, live session
 │   ├── runtime/             # agent_loop, session, preemption, logging
 │   ├── commands/            # slash command registry
 │   ├── domains/cuda/        # CUDA domain adapter
@@ -57,12 +58,28 @@ ict-agent/
 ## Testing
 
 ```bash
-python -m pytest tests/unit tests/integration_mock_api -v   # 64 tests, no API needed
+python -m pytest tests/unit tests/integration_mock_api -v   # 68 tests, no API needed
 ICT_AGENT_RUN_REAL_API=1 python -m pytest tests/integration_real_api -v  # needs API key
 python scripts/run_enhancements_e2e.py -v                   # live agent e2e
 ```
 
 See `docs/testing.md` for full test roster, live session testing patterns, and CI/CD details.
+
+## Live Session
+
+Live sessions let AI/agents drive `ict-agent` programmatically via FIFO. All session management is native Python — no bash scripts required.
+
+```bash
+ict-agent start  [--session-id ID] [--ttl SEC] [-- agent flags...]  # launch agent with FIFO stdin
+ict-agent send   [--session-id ID] "message"                         # inject user message
+ict-agent status [--session-id ID]                                   # check if running
+ict-agent stop   [--session-id ID]                                   # graceful shutdown
+ict-agent paths  [--session-id ID]                                   # show fifo/log/pid paths
+```
+
+Each session gets isolated state under `.live_session/session_<id>/` (FIFO, pid, stdout.log). The agent's output is teed to `stdout.log` via `RunLogger` (triggered by `ICT_AGENT_LIVE_LOG` env var). External callers read `stdout.log` and poll for `">>> Ready for input."` to detect turn completion.
+
+See `docs/live_session.md` for multi-session, cleanup, and agent-driven workflow details.
 
 ## Provider & Model Selection
 
