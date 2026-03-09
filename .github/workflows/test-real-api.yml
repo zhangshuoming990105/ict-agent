@@ -33,7 +33,7 @@ jobs:
         if: steps.check-commit.outputs.run_real_api == 'true'
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - name: Install uv and cache deps
         if: steps.check-commit.outputs.run_real_api == 'true'

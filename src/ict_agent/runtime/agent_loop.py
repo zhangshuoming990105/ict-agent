@@ -320,7 +320,16 @@ def unique_preserve_order(items: list[str]) -> list[str]:
     return ordered
 
 
-CORE_TOOLS = {"read_file", "write_file", "run_shell", "list_directory", "search_files", "grep_text", "workspace_info"}
+CORE_TOOLS = {
+    "read_file",
+    "write_file",
+    "edit_file",
+    "run_shell",
+    "list_directory",
+    "search_files",
+    "grep_text",
+    "workspace_info",
+}
 
 
 def resolve_active_tool_schemas(selected_skills, tool_schema_map: dict[str, dict], all_tool_schemas: list[dict]) -> list[dict]:

@@ -52,7 +52,7 @@ ict-agent/
 ## Testing
 
 ```bash
-python -m pytest tests/unit tests/integration_mock_api -v   # 49 tests, no API needed
+python -m pytest tests/unit tests/integration_mock_api -v   # 64 tests, no API needed
 ICT_AGENT_RUN_REAL_API=1 python -m pytest tests/integration_real_api -v  # needs API key
 python scripts/run_enhancements_e2e.py -v                   # live agent e2e
 ```

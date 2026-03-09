@@ -17,6 +17,7 @@
 | 文件 | 测试数 | 说明 |
 |------|--------|------|
 | `test_commands.py` | 5 | `/set-model`, `/run`, `/fork` 等命令行为 |
+| `test_edit_file.py` | 13 | edit_file 工具、edit_diff 工具（fuzzy match、行尾、BOM） |
 | `test_enhancements.py` | 29 | 6 大增强功能: workspace=cwd, 大输出落盘, max_tokens, 动态 schema, streaming(mock), 沙箱(含 bwrap/seatbelt 活体) |
 | `test_fork_tools.py` | 8 | fork 工具：fork_subagent、drain、status、wait |
 | `test_preemption.py` | 1 | 抢占标志 roundtrip |
@@ -36,7 +37,7 @@ PYTHONPATH=src python -m pytest tests/unit/ -v
 
 | 文件 | 测试数 | 说明 |
 |------|--------|------|
-| `test_runtime_smoke.py` | 1 | 工具调用执行（process_tool_calls） |
+| `test_runtime_smoke.py` | 2 | 工具调用执行（calculator、edit_file） |
 | **合计** | **1** | |
 
 ```bash
@@ -84,12 +85,12 @@ ICT_AGENT_RUN_REAL_API=1 PYTHONPATH=src python -m pytest tests/integration_real_
 
 | Level | 目录 | 测试数 | CI 要求 |
 |-------|------|--------|---------|
-| Unit | `tests/unit/` | 49 | ✅ 必须通过 |
-| Integration mock | `tests/integration_mock_api/` | 1 | ✅ 必须通过 |
+| Unit | `tests/unit/` | 62 | ✅ 必须通过 |
+| Integration mock | `tests/integration_mock_api/` | 2 | ✅ 必须通过 |
 | Integration real_api | `tests/integration_real_api/` | 3 | ⏭️ 按条件 skip（无 API 时跳过） |
 | **总计** | | **53** | |
 
-CI 策略：**每次 push/PR 跑 Unit + Integration mock（50 个）必须绿；real_api 仅在 commit message 含 `[real-api]` 或手动触发时跑 3 个测试。**
+CI 策略：**每次 push/PR 跑 Unit + Integration mock（64 个）必须绿；real_api 仅在 commit message 含 `[real-api]` 或手动触发时跑 3 个测试。**
 
 ---
 
@@ -98,7 +99,7 @@ CI 策略：**每次 push/PR 跑 Unit + Integration mock（50 个）必须绿；
 ### 默认流水线（每次 push/PR）
 
 - **Workflow**：`.github/workflows/test.yml`
-- **行为**：跑 50 个 unit + mock 测试，real_api 被 skip。安装 bubblewrap 以支持 sandbox 单元测试。
+- **行为**：跑 64 个 unit + mock 测试，real_api 被 skip。安装 bubblewrap 以支持 sandbox 单元测试。
 - **不需要** 配置任何 API secret。
 
 ### Real API 测试（按需）
@@ -115,7 +116,7 @@ CI 策略：**每次 push/PR 跑 Unit + Integration mock（50 个）必须绿；
 
 ```bash
 # Unit + mock（无需 API）
-python -m pytest tests/unit tests/integration_mock_api -v        # 50 tests
+python -m pytest tests/unit tests/integration_mock_api -v        # 64 tests
 
 # Real API（需 API key）
 ICT_AGENT_RUN_REAL_API=1 python -m pytest tests/integration_real_api -v  # 3 tests

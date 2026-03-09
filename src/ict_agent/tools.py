@@ -14,6 +14,15 @@ from pathlib import Path
 from typing import Callable
 
 from ict_agent.runtime.preemption import is_preempt_requested, shell_interrupt_on_preempt
+from ict_agent.utils.edit_diff import (
+    detect_line_ending,
+    fuzzy_find_text,
+    generate_diff_string,
+    normalize_for_fuzzy_match,
+    normalize_to_lf,
+    restore_line_endings,
+    strip_bom,
+)
 
 
 _TOOL_REGISTRY: dict[str, tuple[Callable, dict]] = {}
@@ -509,6 +518,90 @@ def write_file(path: str, content: str, mode: str = "overwrite") -> str:
         )
     except Exception as exc:
         return f"Error writing file '{_rel(target)}': {exc}"
+
+
+@tool(
+    name="edit_file",
+    description=(
+        "Edit a file by replacing exact text. Use for precise, surgical edits instead of rewriting "
+        "the whole file. old_text must match exactly (including whitespace). If exact match fails, "
+        "fuzzy matching is tried (trailing spaces, smart quotes, Unicode dashes). "
+        "Provide enough context in old_text to make it unique."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "File path relative to workspace root."},
+            "old_text": {"type": "string", "description": "Exact text to find and replace (must be unique in file)."},
+            "new_text": {"type": "string", "description": "New text to replace old_text with."},
+        },
+        "required": ["path", "old_text", "new_text"],
+    },
+)
+def edit_file(path: str, old_text: str, new_text: str) -> str:
+    """Replace old_text with new_text in file. Tries exact match first, then fuzzy match."""
+    target = _resolve_in_workspace(path)
+    if not target.exists():
+        return f"Error: file not found: {_rel(target)}"
+    if not target.is_file():
+        return f"Error: not a file: {_rel(target)}"
+    try:
+        raw_content = target.read_text(encoding="utf-8")
+    except Exception as exc:
+        return f"Error reading file '{_rel(target)}': {exc}"
+
+    bom, content = strip_bom(raw_content)
+    original_ending = detect_line_ending(content)
+    normalized_content = normalize_to_lf(content)
+    normalized_old = normalize_to_lf(old_text)
+    normalized_new = normalize_to_lf(new_text)
+
+    match_result = fuzzy_find_text(normalized_content, normalized_old)
+    if not match_result.found:
+        return (
+            f"Error: could not find the text in {_rel(target)}. "
+            "old_text must match exactly (including whitespace and newlines). "
+            "Try copying the exact text from read_file."
+        )
+
+    # Check uniqueness
+    fuzzy_content = normalize_for_fuzzy_match(normalized_content)
+    fuzzy_old = normalize_for_fuzzy_match(normalized_old)
+    occurrences = len(fuzzy_content.split(fuzzy_old)) - 1
+    if occurrences > 1:
+        return (
+            f"Error: found {occurrences} occurrences of the text in {_rel(target)}. "
+            "old_text must be unique. Provide more context to make it unique."
+        )
+
+    base_content = match_result.content_for_replacement
+    new_content = (
+        base_content[: match_result.index]
+        + normalized_new
+        + base_content[match_result.index + match_result.match_length :]
+    )
+
+    if base_content == new_content:
+        return (
+            f"Error: no changes would be made to {_rel(target)}. "
+            "The replacement produces identical content."
+        )
+
+    final_content = bom + restore_line_endings(new_content, original_ending)
+    try:
+        target.write_text(final_content, encoding="utf-8")
+    except Exception as exc:
+        return f"Error writing file '{_rel(target)}': {exc}"
+
+    diff_str, first_line = generate_diff_string(base_content, new_content)
+    match_note = " (fuzzy match)" if match_result.used_fuzzy_match else ""
+    lines = [
+        f"Successfully replaced text in {_rel(target)}{match_note}.",
+        f"First changed line: {first_line}" if first_line else "",
+        "Diff:",
+        diff_str,
+    ]
+    return "\n".join(line for line in lines if line)
 
 
 @tool(

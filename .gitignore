@@ -17,3 +17,4 @@ cuda_extension.so
 .shell_policy.json
 .tool_outputs/
 output.txt
+.openclaw/

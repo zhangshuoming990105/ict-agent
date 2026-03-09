@@ -17,7 +17,7 @@ python main.py --sandbox                    # process-level sandbox
 ## Testing
 
 ```bash
-python -m pytest tests/unit tests/integration_mock_api -v        # 50 tests, no API
+python -m pytest tests/unit tests/integration_mock_api -v        # 64 tests, no API
 ICT_AGENT_RUN_REAL_API=1 python -m pytest tests/integration_real_api -v  # 3 tests, needs API
 python scripts/run_mixed_e2e.py -v                               # lightweight live e2e (3 turns)
 ```
@@ -54,11 +54,12 @@ Use `--model gpt-oss-120b` for tests. Session IDs: 0=live_e2e, 1=fork_smoke, 2=e
 - **runtime/agent_loop.py** — Core loop. Key mechanisms:
   - `start_async_streaming_call()` — streaming with incremental tool_call merging
   - `_maybe_persist_large_output()` — >30K char results saved to `.tool_outputs/` (workspace-relative so `read_file` can access)
-  - `CORE_TOOLS` — 7 core tools always sent; others injected on demand (fork tools on keyword match)
+  - `CORE_TOOLS` — 8 core tools (read_file, write_file, edit_file, run_shell, list_directory, search_files, grep_text, workspace_info); others injected on demand (fork tools on keyword match)
   - `MAX_TOKENS_TOOL_TURN=2048` / `MAX_TOKENS_FINAL_TURN=8192`
   - Preemption, recovery, auto-compaction
 - **runtime/logging.py** — `RunLogger` with `print_streaming()` / `end_streaming()`
 - **tools.py** — `@tool` registry + shell safety (`SAFE_COMMANDS`, `BANNED_COMMAND_PATTERNS`, wildcard allowlist/denylist)
+- **utils/edit_diff.py** — `edit_file` surgical edit logic (fuzzy match, line endings, BOM)
 - **sandbox.py** — bubblewrap (Linux) / seatbelt (macOS) process isolation
 - **skills.py** — loads `skills/*/SKILL.md`, trigger-based selection, `inline`/`fork` modes
 - **context.py** — `ContextManager`: messages, tiktoken counting, compaction
@@ -86,7 +87,7 @@ Use `--model gpt-oss-120b` for tests. Session IDs: 0=live_e2e, 1=fork_smoke, 2=e
 ## Conventions
 
 - **Doc updates are mandatory.** After completing a feature or test change, always check and update the relevant docs (`CLAUDE.md`, `docs/testing.md`, `README.md`). Test counts, command examples, and architecture descriptions must stay in sync with the code.
-- Python 3.11+. Source under `src/ict_agent/` with `setuptools` package-dir layout.
+- Python 3.10+. Source under `src/ict_agent/` with `setuptools` package-dir layout.
 - OpenAI SDK against compatible endpoints. Streaming by default in the main chat loop.
 - Workspace root = `cwd` (no `--task`) or `task_dir/workdir` (with `--task`).
 - `.tool_outputs/` stores persisted large outputs (gitignored).

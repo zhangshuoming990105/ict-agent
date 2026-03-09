@@ -7,7 +7,7 @@ name = "ict-agent"
 version = "0.1.0"
 description = "Refactored preemptible coding agent runtime with CUDA task support."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
   "openai>=1.0.0",
   "tiktoken>=0.7.0",
