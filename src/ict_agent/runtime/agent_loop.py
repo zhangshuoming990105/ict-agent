@@ -34,7 +34,7 @@ from ict_agent.runtime.session import (
     to_pending_input_from_preempt_event,
 )
 from ict_agent.runtime.current_context import clear_current_runtime, get_current_runtime, set_current_runtime
-from ict_agent.llm import is_anthropic_client
+from ict_agent.llm import is_anthropic_client, is_anthropic_model, get_client_for_model
 from ict_agent.skills import build_skill_prompt, load_skills, select_skills
 from ict_agent.skills import SkillSpec
 from ict_agent.tools import execute_tool, get_all_tool_schemas, get_tool_schema_map, set_shell_safety
@@ -391,10 +391,12 @@ def _anthropic_usage_to_openai_like(usage) -> Any:
     output_tok = getattr(usage, "output_tokens", 0) or 0
     cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
     cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    # Total prompt = all input tokens (uncached + cache hit + cache miss/write)
+    total_prompt = input_tok + cache_read + cache_write
     return type("Usage", (), {
-        "prompt_tokens": input_tok + cache_read,
+        "prompt_tokens": total_prompt,
         "completion_tokens": output_tok,
-        "total_tokens": input_tok + output_tok + cache_read + cache_write,
+        "total_tokens": total_prompt + output_tok,
         "cache_read_input_tokens": cache_read,
         "cache_creation_input_tokens": cache_write,
     })()
@@ -809,7 +811,8 @@ def run_fork_skill(
     if not active_tool_schemas:
         return "Error: fork skill has no tools available (check skill's tools list and tool registry)."
 
-    _use_anthropic = is_anthropic_client(client)
+    model_client = get_client_for_model(client, model)
+    _use_anthropic = is_anthropic_model(model)
     last_content = ""
     for step_idx in range(max_steps):
         try:
@@ -817,14 +820,14 @@ def run_fork_skill(
             if _use_anthropic:
                 system_blocks, anth_messages = _openai_messages_to_anthropic(request_messages)
                 anth_tools = _openai_tools_to_anthropic(active_tool_schemas)
-                anth_resp = client.messages.create(
+                anth_resp = model_client.messages.create(
                     model=model, system=system_blocks, messages=anth_messages,
                     tools=anth_tools, max_tokens=MAX_TOKENS_FINAL_TURN,
                 )
                 response = _anthropic_response_to_openai_like(anth_resp)
             else:
                 async_call = start_async_model_call(
-                    client=client,
+                    client=model_client,
                     model=model,
                     request_messages=request_messages,
                     active_tool_schemas=active_tool_schemas,
@@ -1187,9 +1190,10 @@ def chat(
 
                     response_model = runtime_state["model"]
                     turn_max_tokens = MAX_TOKENS_TOOL_TURN if (did_call_tool or step_idx > 0) else MAX_TOKENS_FINAL_TURN
-                    _streaming_fn = start_anthropic_streaming_call if is_anthropic_client(client) else start_async_streaming_call
+                    model_client = get_client_for_model(client, response_model)
+                    _streaming_fn = start_anthropic_streaming_call if is_anthropic_model(response_model) else start_async_streaming_call
                     async_call = _streaming_fn(
-                        client=client,
+                        client=model_client,
                         model=response_model,
                         request_messages=request_messages,
                         active_tool_schemas=active_tool_schemas,

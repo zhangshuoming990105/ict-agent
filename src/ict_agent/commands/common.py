@@ -18,8 +18,14 @@ def format_turn_usage(usage) -> str:
     prompt = getattr(usage, "prompt_tokens", 0) or 0
     completion = getattr(usage, "completion_tokens", 0) or 0
     total = getattr(usage, "total_tokens", 0) or 0
+    # Anthropic: cache_read_input_tokens / cache_creation_input_tokens
     cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
     cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    # OpenAI: prompt_tokens_details.cached_tokens
+    if not cache_read:
+        ptd = getattr(usage, "prompt_tokens_details", None)
+        if ptd:
+            cache_read = getattr(ptd, "cached_tokens", 0) or 0
     base = f"[tokens: prompt={prompt:,}, completion={completion:,}, total={total:,}"
     if cache_read or cache_write:
         base += f", cache_read={cache_read:,}, cache_write={cache_write:,}"

@@ -20,7 +20,7 @@ The `ict-agent` command is registered via `[project.scripts]` in pyproject.toml;
 
 ```bash
 python -m pytest tests/unit tests/integration_mock_api -v        # 64 tests, no API
-ICT_AGENT_RUN_REAL_API=1 python -m pytest tests/integration_real_api -v  # 3 tests, needs API
+ICT_AGENT_RUN_REAL_API=1 python -m pytest tests/integration_real_api -v  # 6 tests, needs API
 python scripts/run_mixed_e2e.py -v                               # lightweight live e2e (3 turns)
 ```
 
@@ -54,9 +54,11 @@ Use `--model gpt-oss-120b` for tests. Session IDs: 0=live_e2e, 1=fork_smoke, 2=e
 
 - **app/** — CLI (`cli.py`), bootstrap, config
 - **runtime/agent_loop.py** — Core loop. Key mechanisms:
-  - `start_async_streaming_call()` — streaming with incremental tool_call merging
-  - `_maybe_persist_large_output()` — >30K char results saved to `.tool_outputs/` (workspace-relative so `read_file` can access)
-  - `CORE_TOOLS` — 8 core tools (read_file, write_file, edit_file, run_shell, list_directory, search_files, grep_text, workspace_info); others injected on demand (fork tools on keyword match)
+  - Dual streaming: `start_anthropic_streaming_call()` (Claude, with prompt caching) / `start_async_streaming_call()` (OpenAI)
+  - `_openai_messages_to_anthropic()` / `_openai_tools_to_anthropic()` — format conversion at API boundary
+  - Prompt caching: `cache_control` on system prompt, last tool def, last user message (~90% input token savings)
+  - `_maybe_persist_large_output()` — >30K char results saved to `.tool_outputs/`
+  - `CORE_TOOLS` — 8 core tools; others injected on demand (fork tools on keyword match)
   - `MAX_TOKENS_TOOL_TURN=2048` / `MAX_TOKENS_FINAL_TURN=8192`
   - Preemption, recovery, auto-compaction
 - **runtime/logging.py** — `RunLogger` with `print_streaming()` / `end_streaming()`
@@ -66,7 +68,7 @@ Use `--model gpt-oss-120b` for tests. Session IDs: 0=live_e2e, 1=fork_smoke, 2=e
 - **skills.py** — loads `skills/*/SKILL.md`, trigger-based selection, `inline`/`fork` modes
 - **context.py** — `ContextManager`: messages, tiktoken counting, compaction
 - **compactor.py** — LLM-based summarization
-- **llm.py** — Provider abstraction (ksyun/infini/auto)
+- **llm.py** — `ModelRouter` dispatches by model name: Claude (`mco-4`, `mcs-1`) → Anthropic SDK; others → OpenAI SDK. `get_client_for_model()`, `is_anthropic_model()`, `/model` switching
 - **commands/** — `CommandRegistry` dispatches `/` commands
 - **domains/cuda/** — `CudaDomainAdapter`, GPU selection, task management, recovery
 
@@ -90,7 +92,7 @@ Use `--model gpt-oss-120b` for tests. Session IDs: 0=live_e2e, 1=fork_smoke, 2=e
 
 - **Doc updates are mandatory.** After completing a feature or test change, always check and update the relevant docs (`CLAUDE.md`, `docs/testing.md`, `README.md`). Test counts, command examples, and architecture descriptions must stay in sync with the code.
 - Python 3.10+. Source under `src/ict_agent/` with `setuptools` package-dir layout.
-- OpenAI SDK against compatible endpoints. Streaming by default in the main chat loop.
+- Dual SDK: Anthropic SDK (Messages API) for Claude models with prompt caching; OpenAI SDK for others. Streaming by default.
 - Workspace root = `cwd` (no `--task`) or `task_dir/workdir` (with `--task`).
 - `.tool_outputs/` stores persisted large outputs (gitignored).
 - `.shell_policy.json` stores user shell allowlist/denylist (gitignored).

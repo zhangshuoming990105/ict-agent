@@ -48,16 +48,16 @@ PYTHONPATH=src python -m pytest tests/integration_mock_api/ -v
 
 ## 3. Integration 测试 - Real API (`tests/integration_real_api/`)
 
-依赖：**真实 LLM API**（如 gpt-oss-120b）。
+依赖：**真实 LLM API**（Anthropic mcs-1 + OpenAI gpt-oss-120b）。
 通过环境变量控制：**未设置 `ICT_AGENT_RUN_REAL_API=1` 时自动 skip**。
 
 只保留**必须调用真实 API** 的测试。不需要 API 的功能（workspace、大输出、动态 schema、shell 安全、沙箱）已在 unit 测试中完整覆盖。
 
 | 文件 | 测试数 | 功能 | 说明 |
 |------|--------|------|------|
-| `test_enhancements_real.py` | 2 | Streaming | `test_streaming_text_response`: 文本流式; `test_streaming_tool_call`: 工具调用流式 |
+| `test_enhancements_real.py` | 6 | Dual-provider streaming | Anthropic: text + tool_call + prompt_caching; OpenAI: text + tool_call; /model switch dispatch |
 | `test_live_session_smoke.py` | 1 | Agent loop e2e | `test_mixed_e2e_smoke`: 3 轮对话 (calculator+time, write+shell+sandbox, /tokens) |
-| **合计** | **3** | | |
+| **合计** | **7** | | |
 
 ```bash
 # 不跑 real_api（默认 skip）
@@ -87,10 +87,10 @@ ICT_AGENT_RUN_REAL_API=1 PYTHONPATH=src python -m pytest tests/integration_real_
 |-------|------|--------|---------|
 | Unit | `tests/unit/` | 62 | ✅ 必须通过 |
 | Integration mock | `tests/integration_mock_api/` | 2 | ✅ 必须通过 |
-| Integration real_api | `tests/integration_real_api/` | 3 | ⏭️ 按条件 skip（无 API 时跳过） |
-| **总计** | | **53** | |
+| Integration real_api | `tests/integration_real_api/` | 7 | ⏭️ 按条件 skip（无 API 时跳过） |
+| **总计** | | **71** | |
 
-CI 策略：**每次 push/PR 跑 Unit + Integration mock（64 个）必须绿；real_api 仅在 commit message 含 `[real-api]` 或手动触发时跑 3 个测试。**
+CI 策略：**每次 push/PR 跑 Unit + Integration mock（64 个）必须绿；real_api 仅在 commit message 含 `[real-api]` 或手动触发时跑 7 个测试。**
 
 ---
 
@@ -119,7 +119,7 @@ CI 策略：**每次 push/PR 跑 Unit + Integration mock（64 个）必须绿；
 python -m pytest tests/unit tests/integration_mock_api -v        # 64 tests
 
 # Real API（需 API key）
-ICT_AGENT_RUN_REAL_API=1 python -m pytest tests/integration_real_api -v  # 3 tests
+ICT_AGENT_RUN_REAL_API=1 python -m pytest tests/integration_real_api -v  # 7 tests
 
 # 手动 e2e 脚本
 python scripts/run_mixed_e2e.py -v          # 3 轮混合

@@ -88,44 +88,67 @@ class ContextManager:
         self.max_tokens = max_tokens
         self.messages: list[dict] = [{"role": "system", "content": system_prompt}]
         self.stats = ConversationStats()
+        # Calibration: anchor from the last API-reported usage, then estimate
+        # only the delta for messages added after that point.
         self._last_prompt_tokens: int | None = None
         self._last_prompt_local_tokens = 0
         self._last_overhead_tokens = 0
+        # Number of messages at the time of last API usage report
+        self._last_usage_msg_count = 0
         try:
             self._enc = tiktoken.get_encoding("cl100k_base") if tiktoken else None
         except Exception:
             self._enc = None
 
+    # ------------------------------------------------------------------
+    # Token estimation (fallback only — prefer API-reported usage)
+    # ------------------------------------------------------------------
+
     def estimate_tokens(self, text: str) -> int:
+        """Estimate token count for arbitrary text (used for overhead calc).
+
+        Uses tiktoken when available, falls back to chars/4 heuristic
+        (conservative, same as Pi-mono).
+        """
         if self._enc is None:
-            return len(text) // 3
+            return len(text) // 4 + 1
         return len(self._enc.encode(text))
 
     def _estimate_message_tokens(self, msg: dict, include_metadata: bool = False) -> int:
-        total = 4
+        """Estimate tokens for a single message (chars/4 heuristic)."""
+        total = 4  # per-message overhead
         role = msg.get("role", "")
-        total += self.estimate_tokens(msg.get("content", "") or "")
+        content = msg.get("content", "") or ""
+        if isinstance(content, str):
+            total += len(content) // 4 + 1
+        elif isinstance(content, list):
+            # Content block list (Anthropic format)
+            for block in content:
+                if isinstance(block, dict):
+                    text = block.get("text", "") or ""
+                    total += len(text) // 4 + 1
         if role == "tool":
-            total += self.estimate_tokens(msg.get("tool_call_id", "") or "")
-            total += self.estimate_tokens(msg.get("name", "") or "")
+            total += len(msg.get("tool_call_id", "") or "") // 4 + 1
+            total += len(msg.get("name", "") or "") // 4 + 1
         elif role == "assistant":
             for tool_call in msg.get("tool_calls") or []:
                 fn = tool_call.get("function", {})
-                total += self.estimate_tokens(tool_call.get("id", "") or "")
-                total += self.estimate_tokens(fn.get("name", "") or "")
-                total += self.estimate_tokens(fn.get("arguments", "") or "")
+                total += len(tool_call.get("id", "") or "") // 4 + 1
+                total += len(fn.get("name", "") or "") // 4 + 1
+                total += len(fn.get("arguments", "") or "") // 4 + 1
         if include_metadata:
             skip = {"content", "tool_calls", "tool_call_id", "name", "role"}
             extra = {k: v for k, v in msg.items() if k not in skip}
             if extra:
-                total += self.estimate_tokens(json.dumps(extra, ensure_ascii=False))
+                total += len(json.dumps(extra, ensure_ascii=False)) // 4 + 1
         return total
 
     def estimate_messages_tokens(
         self, messages: list[dict] | None = None, include_metadata: bool = False
     ) -> int:
+        """Estimate total tokens for messages (fallback when no API usage available)."""
         messages = messages or self.messages
-        total = 3
+        total = 3  # conversation overhead
         for msg in messages:
             total += self._estimate_message_tokens(msg, include_metadata=include_metadata)
         return total
@@ -255,27 +278,61 @@ class ContextManager:
         return original_len - len(self.messages)
 
     def record_usage(self, usage, overhead_tokens: int = 0) -> TokenUsage:
+        """Record API-reported usage as the authoritative token count.
+
+        The ``prompt_tokens`` value from the API is the ground truth for how
+        many tokens the last request consumed.  We use it to *calibrate*
+        future estimates: ``get_context_tokens`` anchors on this value and
+        only estimates the delta for messages added after this point.
+        """
+        # --- extract cache stats from either Anthropic or OpenAI format ---
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        if not cache_read:
+            ptd = getattr(usage, "prompt_tokens_details", None)
+            if ptd:
+                cache_read = getattr(ptd, "cached_tokens", 0) or 0
+
         token_usage = TokenUsage(
             prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
             completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
             total_tokens=getattr(usage, "total_tokens", 0) or 0,
-            cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
-            cache_write_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_write,
         )
         self.stats.record(token_usage)
+
+        # Calibration anchor: API-reported prompt_tokens is the real context
+        # size at the moment of the call.  We snapshot the local estimate at
+        # the same time so ``get_context_tokens`` can compute the delta for
+        # any messages added after this point.
         self._last_prompt_tokens = token_usage.prompt_tokens
-        self._last_prompt_local_tokens = self.estimate_messages_tokens_structured()
+        self._last_prompt_local_tokens = self._estimate_trailing_tokens(0)
         self._last_overhead_tokens = max(0, overhead_tokens)
+        self._last_usage_msg_count = len(self.messages)
         return token_usage
 
+    def _estimate_trailing_tokens(self, since_msg_index: int) -> int:
+        """Estimate tokens for messages[since_msg_index:] using chars/4."""
+        total = 0
+        for msg in self.messages[since_msg_index:]:
+            total += self._estimate_message_tokens(msg, include_metadata=True)
+        return total
+
     def get_context_tokens(self, overhead_tokens: int | None = None) -> int:
+        """Best estimate of current context window usage in tokens.
+
+        Strategy (same as Pi-mono ``estimateContextTokens``):
+        1. If we have an API-reported ``prompt_tokens`` → use that as anchor,
+           then estimate only the *delta* for messages added since.
+        2. Otherwise → pure local estimate (chars/4 heuristic).
+        """
         if overhead_tokens is None:
             overhead_tokens = self._last_overhead_tokens
         if self._last_prompt_tokens is not None:
-            current_local = self.estimate_messages_tokens_structured()
-            delta_local = current_local - self._last_prompt_local_tokens
-            delta_overhead = max(0, overhead_tokens) - self._last_overhead_tokens
-            return max(0, self._last_prompt_tokens + delta_local + delta_overhead)
+            # Estimate tokens only for messages added after the last API call
+            trailing = self._estimate_trailing_tokens(self._last_usage_msg_count)
+            return max(0, self._last_prompt_tokens + trailing + max(0, overhead_tokens))
         return self.estimate_messages_tokens_structured() + max(0, overhead_tokens)
 
     def get_token_diagnostics(
