@@ -1,0 +1,469 @@
+Operator: other/gather
+Target GPU architecture: sm_80
+Read the workspace files, update cuda_/kernel.cu, and validate your changes with:
+python test.py --compile-only
+python test.py --no-perf
+python test.py
+If variants are supported: python test.py --variants yaml --no-perf
+Work autonomously in this turn. When compile and correctness pass, reply with a short summary.
+
+## File: test.py
+```py
+"""Test script for Gather operator using the new optest framework.
+
+This is the new unified test entry point that replaces check_cuda.py and
+check_triton.py.
+"""
+
+import os
+import sys
+import argparse
+from dataclasses import dataclass
+
+import torch
+from optest import (
+    TestCase,
+    TensorSpec,
+    ScalarSpec,
+    TestConfig,
+    CUDABackend,
+    TritonBackend,
+    run_test,
+    print_result,
+)
+
+from torch_.ref import torch_kernel
+
+# Add parent directory to path for imports
+TESTCASE_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_DIR)
+
+
+@dataclass
+class GatherParams:
+    """Gather test parameters."""
+
+    data_shape: tuple = (50, 128, 4)
+    num_indices: int = 4
+    output_shape: tuple = (50, 128, 4)
+
+
+# Define test case using new framework
+testcase = TestCase(
+    tensor_specs=[
+        TensorSpec("params", torch.float32, ("data_shape",), "input"),
+        TensorSpec("indices", torch.int64, ("num_indices",), "input"),
+        TensorSpec(
+            "output",
+            torch.float32,
+            ("data_shape", 0, "data_shape", 1, "num_indices"),
+            "output",
+        ),
+    ],
+    scalar_specs=[
+        ScalarSpec("dim0", int, lambda p: p.data_shape[0]),
+        ScalarSpec("dim1", int, lambda p: p.data_shape[1]),
+        ScalarSpec("dim2", int, lambda p: p.data_shape[2]),
+        ScalarSpec("num_indices", int, lambda p: p.num_indices),
+    ],
+    torch_kernel=torch_kernel,
+)
+
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Gather kernel test (new framework)")
+    parser.add_argument(
+        "--compile-only",
+        action="store_true",
+        help="Only compile the kernel without running tests",
+    )
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Disable performance testing"
+    )
+    parser.add_argument(
+        "--backend",
+        choices=["cuda", "triton"],
+        default="cuda",
+        help="Backend to test (default: cuda)",
+    )
+    return parser.parse_args()
+
+
+def main():
+    """Main test entry point."""
+    args = parse_args()
+
+    # Create test configuration
+    config = TestConfig(
+        enable_perf=not args.no_perf,
+        compile_only=args.compile_only,
+    )
+
+    # Create backend
+    if args.backend == "cuda":
+        backend = CUDABackend()
+    else:  # triton
+        backend = TritonBackend()
+
+    # Create test parameters
+    params = GatherParams()
+
+    # Run test
+    print(f"\n{'=' * 80}")
+    print(f"Testing Gather operator with {backend.name} backend")
+    print(f"Data shape: {params.data_shape}, Indices: {params.num_indices}")
+    print(f"{'=' * 80}\n")
+
+    result = run_test(
+        testcase_dir=TESTCASE_DIR,
+        testcase=testcase,
+        backend=backend,
+        params=params,
+        config=config,
+    )
+
+    # Print results
+    if not args.compile_only:
+        print_result(result)
+
+    return 0 if result.passed or result.skipped else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+```
+
+## File: torch_/ref.py
+```py
+import torch
+
+
+def torch_kernel(params: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+    expanded_indices = indices.view(1, 1, -1).expand(params.size(0), params.size(1), -1)
+    return torch.gather(params, dim=2, index=expanded_indices)
+
+```
+
+## File: cases.yaml
+```yaml
+dtypes:
+- float32
+shapes:
+- - 1000
+  - 2048
+  - 8
+- - 100
+  - 32
+  - 16
+- - 128
+  - 512
+  - 3
+- - 2048
+  - 64
+  - 64
+- - 32
+  - 128
+  - 32
+- - 50
+  - 128
+  - 4
+- - 512
+  - 64
+  - 5
+- - 80
+  - 256
+  - 10
+
+```
+
+## File: get_data.py
+```py
+import torch
+import ctypes
+from dataclasses import dataclass
+from optest.tools.checker import SEED
+
+
+@dataclass
+class Params:
+    data_shape: tuple = (50, 128, 4)
+    num_indices: int = 4
+
+
+def get_cuda_argtypes():
+    return [
+        ctypes.c_void_p,  # params
+        ctypes.c_void_p,  # indices
+        ctypes.c_void_p,  # output
+        ctypes.c_int,  # dim0
+        ctypes.c_int,  # dim1
+        ctypes.c_int,  # dim2
+        ctypes.c_int,  # num_indices
+    ]
+
+
+def get_cuda_torch_inputs(params: Params):
+    torch.manual_seed(SEED)
+    params_tensor = torch.randn(params.data_shape, dtype=torch.float32, device="cuda")
+    indices = torch.randint(
+        0,
+        params.data_shape[-1],
+        (params.num_indices,),
+        dtype=torch.int64,
+        device="cuda",
+    )
+    output = torch.empty(
+        (params.data_shape[0], params.data_shape[1], params.num_indices),
+        dtype=torch.float32,
+        device="cuda",
+    )
+    cuda_all_inputs = [
+        params_tensor,
+        indices,
+        output,
+        params.data_shape[0],
+        params.data_shape[1],
+        params.data_shape[2],
+        params.num_indices,
+    ]
+    torch_all_inputs = [params_tensor, indices]
+    return cuda_all_inputs, torch_all_inputs, [output]
+
+
+def cuda_output_tensor_transform(tensor):
+    return tensor
+
+```
+
+## File: check_cuda.py
+```py
+import os
+import sys
+import argparse
+from get_data import (
+    get_cuda_torch_inputs,
+    Params,
+    get_cuda_argtypes,
+    cuda_output_tensor_transform,
+)
+from torch_.ref import torch_kernel
+from optest.tools.checker import check_cuda_vs_torch
+
+TESTCASE_ROOT_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_ROOT_DIR)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="gather_50_128_4 CUDA kernel test")
+    parser.add_argument(
+        "--compile-only",
+        action="store_true",
+        help="Only compile the CUDA kernel without running correctness checks",
+    )
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Disable performance benchmarking"
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    params = Params()
+    check_cuda_vs_torch(
+        testcase_root_dir=TESTCASE_ROOT_DIR,
+        get_cuda_torch_inputs=get_cuda_torch_inputs,
+        params=params,
+        torch_kernel=torch_kernel,
+        get_cuda_argtypes=get_cuda_argtypes,
+        output_tensor_transform=cuda_output_tensor_transform,
+        enable_perf=not args.no_perf,
+        compile_only=args.compile_only,
+    )
+
+```
+
+## File: check_triton.py
+```py
+import os
+import sys
+import argparse
+from get_data import get_cuda_torch_inputs, Params, cuda_output_tensor_transform
+from torch_.ref import torch_kernel
+from triton_.kernel import triton_kernel
+from optest.tools.checker import compare_results
+
+TESTCASE_ROOT_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_ROOT_DIR)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="gather_50_128_4 Triton kernel test")
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Placeholder flag for compatibility"
+    )
+    return parser.parse_args()
+
+
+def main():
+    params = Params()
+    _, torch_inputs, _ = get_cuda_torch_inputs(params)
+    torch_output = cuda_output_tensor_transform(torch_kernel(*torch_inputs))
+    triton_output = cuda_output_tensor_transform(triton_kernel(*torch_inputs))
+    compare_results(torch_output, triton_output, test_type=["PyTorch", "Triton"])
+
+
+if __name__ == "__main__":
+    parse_args()
+    main()
+
+```
+
+## Previous kernel
+```cuda
+#include <cuda_runtime.h>
+#include <stdint.h>
+
+// CUDA kernel for gather operation along last dimension
+// Input: params[dim0, dim1, dim2]
+// Indices: indices[num_indices]
+// Output: output[dim0, dim1, num_indices]
+__global__ void gather_kernel_impl(
+    const float* __restrict__ params,
+    const int64_t* __restrict__ indices,
+    float* __restrict__ output,
+    int dim0,
+    int dim1,
+    int dim2,
+    int num_indices
+) {
+    // Total output elements: dim0 * dim1 * num_indices
+    int total_elements = dim0 * dim1 * num_indices;
+    
+    // Use grid-stride loop for handling arbitrary sizes
+    for (int idx = blockIdx.x * blockDim.x + threadIdx.x;
+         idx < total_elements;
+         idx += blockDim.x * gridDim.x) {
+        
+        // Decompose linear index into (i, j, k) where:
+        // i = batch dimension (0..dim0-1)
+        // j = middle dimension (0..dim1-1)
+        // k = output index dimension (0..num_indices-1)
+        int k = idx % num_indices;
+        int temp = idx / num_indices;
+        int j = temp % dim1;
+        int i = temp / dim1;
+        
+        // Read the index value (which dimension in dim2 to gather from)
+        int64_t gather_idx = indices[k];
+        
+        // Bounds check: ensure gather_idx is within valid range [0, dim2)
+        // This prevents out-of-bounds memory access
+        if (gather_idx >= 0 && gather_idx < dim2) {
+            // Calculate input position: params[i, j, gather_idx]
+            // Input is laid out as [dim0, dim1, dim2]
+            int input_idx = (i * dim1 + j) * dim2 + static_cast<int>(gather_idx);
+            
+            // Write to output[i, j, k]
+            output[idx] = params[input_idx];
+        } else {
+            // Out of bounds - write 0 (though this shouldn't happen with valid input)
+            output[idx] = 0.0f;
+        }
+    }
+}
+
+// Host interface function - named cuda_kernel as expected by optest framework
+extern "C" void cuda_kernel(
+    const float* params,
+    const int64_t* indices,
+    float* output,
+    int dim0,
+    int dim1,
+    int dim2,
+    int num_indices
+) {
+    int total_elements = dim0 * dim1 * num_indices;
+    
+    // Configure launch parameters
+    int threads_per_block = 256;
+    int num_blocks = (total_elements + threads_per_block - 1) / threads_per_block;
+    
+    // Limit grid size for efficiency
+    num_blocks = min(num_blocks, 2048);
+    
+    gather_kernel_impl<<<num_blocks, threads_per_block>>>(
+        params,
+        indices,
+        output,
+        dim0,
+        dim1,
+        dim2,
+        num_indices
+    );
+}
+
+```
+
+## Compile log
+```text
+
+================================================================================
+Testing Gather operator with CUDA backend
+Data shape: (50, 128, 4), Indices: 4
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded
+
+```
+
+## Verification log
+```text
+
+================================================================================
+Testing Gather operator with CUDA backend
+Data shape: (50, 128, 4), Indices: 4
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded
+Generating test data...
+Running PyTorch reference...
+Running CUDA kernel...
+Traceback (most recent call last):
+  File "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gather/artifact/test.py", line 128, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gather/artifact/test.py", line 112, in main
+    result = run_test(
+             ^^^^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/optest/execution/runner.py", line 183, in run_test
+    return runner.run(testcase, params, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/optest/execution/runner.py", line 118, in run
+    self.backend.execute(kernel, test_inputs)
+  File "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/optest/core/backend.py", line 85, in execute
+    torch.cuda.synchronize()  # Wait for CUDA kernel to complete
+    ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/yuqiuchu/miniconda3/envs/ict-agent/lib/python3.11/site-packages/torch/cuda/__init__.py", line 985, in synchronize
+    return torch._C._cuda_synchronize()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+
+```
+
+## Performance log
+```text
+Skipped because correctness checks did not pass.
+
+```
+
+Revise the kernel to fix the reported failures while keeping the same interface.

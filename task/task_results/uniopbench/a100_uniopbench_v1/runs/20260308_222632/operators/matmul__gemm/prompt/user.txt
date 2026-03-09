@@ -1,0 +1,370 @@
+Operator: matmul/gemm
+Target GPU architecture: sm_80
+Read the workspace files, update cuda_/kernel.cu, and validate your changes with:
+python test.py --compile-only
+python test.py --no-perf
+python test.py
+If variants are supported: python test.py --variants yaml --no-perf
+Work autonomously in this turn. When compile and correctness pass, reply with a short summary.
+
+## File: test.py
+```py
+import os
+import sys
+import argparse
+from dataclasses import dataclass
+
+import torch
+from optest import (
+    TestCase,
+    TensorSpec,
+    ScalarSpec,
+    TestConfig,
+    CUDABackend,
+    TritonBackend,
+    run_test,
+    print_result,
+    create_suite,
+    print_suite_summary,
+)
+
+from torch_.ref import torch_kernel
+
+# Add parent directory to path for imports
+TESTCASE_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_DIR)
+
+@dataclass
+class GemmParams:
+    shape: tuple = (1024, 1024, 1024)
+    dtype: torch.dtype = torch.float32
+    op_levels: int = 3   
+    
+    def __post_init__(self):
+        # Kernel 0~3 是 SGEMM (Float32)
+        if self.op_levels <= 3:
+            self.dtype = torch.float32
+        # Kernel 4~7 是 HGEMM (Float16)
+        else:
+            self.dtype = torch.float16
+
+    @property
+    def M(self): return self.shape[0]
+    @property
+    def N(self): return self.shape[1]
+    @property
+    def K(self): return self.shape[2]
+
+    @property
+    def final_op_type(self) -> int:
+        return self.op_levels
+
+    @property
+    def shape_a(self):
+        return (self.M, self.K)
+    
+    @property
+    def shape_b(self):
+        return (self.K, self.N)
+    
+    @property
+    def shape_c(self):
+        return (self.M, self.N)
+
+testcase = TestCase(
+    tensor_specs=[
+        TensorSpec("a", "dtype", ("shape_a",), "input"),
+        TensorSpec("b", "dtype", ("shape_b",), "input"),
+        TensorSpec("c", "dtype", ("shape_c",), "output"),
+    ],
+    scalar_specs=[
+        ScalarSpec("M", int, lambda p: p.M),
+        ScalarSpec("N", int, lambda p: p.N),
+        ScalarSpec("K", int, lambda p: p.K),
+        ScalarSpec("op_type", int, lambda p: p.final_op_type),
+    ],
+    torch_kernel=torch_kernel,
+)
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Gemm kernel test (new framework)")
+    parser.add_argument(
+        "--compile-only",
+        action="store_true",
+        help="Only compile the kernel without running tests",
+    )
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Disable performance testing"
+    )
+    parser.add_argument(
+        "--backend",
+        choices=["cuda", "triton"],
+        default="cuda",
+        help="Backend to test (default: cuda)",
+    )
+    parser.add_argument(
+        "--variants",
+        choices=["yaml", "none"],
+        default="none",
+        help='Test variants: "yaml" to load from cases.yaml, "none" for single test',
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print individual variant results in suite mode",
+    )
+    return parser.parse_args()
+
+def main():
+    args = parse_args()
+
+    config = TestConfig(
+        enable_perf=not args.no_perf,
+        compile_only=args.compile_only,
+        verbose=True,
+        perf_warmup=20,       
+        perf_iterations=100,  
+        atol=1e-1,           
+        rtol=1e-1,
+    )
+
+    if args.backend == "cuda":
+        backend = CUDABackend()
+    else:
+        backend = TritonBackend()
+
+    if args.variants == "yaml":
+        suite = create_suite(
+            params_class=GemmParams,
+            testcase=testcase,
+            testcase_dir=TESTCASE_DIR,
+            backend=backend,
+            variant_source="yaml",
+            config=config 
+        )
+        print(f"\n{'=' * 80}")
+        print(f"Testing GEMM operator (Direct Mapping Mode 0-11)")
+        print(f"{'=' * 80}\n")
+        
+        result = suite.run()
+        print_suite_summary(result, verbose=True)
+        return result.exit_code
+
+    # Single test mode
+    params = GemmParams()
+
+    print(f"\n{'=' * 80}")
+    print(f"Testing GEMM Single Mode")
+    print(f"Kernel ID: {params.op_levels} -> Auto Dtype: {params.dtype}")
+    print(f"Shape: M={params.M}, N={params.N}, K={params.K}")
+    print(f"{'=' * 80}\n")
+
+    result = run_test(TESTCASE_DIR, testcase, backend, params, config)
+    if not args.compile_only:
+        print_result(result)
+
+    return 0 if result.passed or result.skipped else 1
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+## File: torch_/ref.py
+```py
+import torch
+
+
+def torch_kernel(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+    return torch.matmul(A, B)
+
+```
+
+## File: cases.yaml
+```yaml
+dtypes:
+  - float32 # 实际类型由op_levels决定
+
+shapes:
+  - shape: [1024, 1024, 1024]
+    op_levels: 0  # Naive f32
+
+  - shape: [1024, 1024, 1024]
+    op_levels: 1  # SlicedK f32
+    
+  - shape: [2048, 2048, 2048]
+    op_levels: 2  # Tiled 8x8 BCF f32
+
+  - shape: [2048, 2048, 2048]
+    op_levels: 3  # WMMA TF32 Stage 2 f32
+
+  - shape: [2048, 2048, 2048]
+    op_levels: 4  # Naive f16
+
+  - shape: [2048, 2048, 2048]
+    op_levels: 5  # Tiled 8x8 BCF f16
+
+  - shape: [1024, 1024, 1024]
+    op_levels: 6  # MMA TF32 Stage 2 f16
+    
+  - shape: [1024, 1024, 1024]
+    op_levels: 7  # MMA TF32 Stage 1 f16
+    
+```
+
+## File: get_data.py
+```py
+import torch
+import ctypes
+import os
+import sys
+from dataclasses import dataclass
+from optest.tools.builder import SEED, load_cuda_kernel
+
+
+@dataclass
+class Params:
+    """GEMM (General Matrix Multiplication) 参数配置"""
+
+    m: int = 32  # A matrix rows
+    k: int = 32  # A matrix cols / B matrix rows
+    n: int = 128  # B matrix cols
+    # A shape: (m, k)
+    # B shape: (k, n)
+    # C shape: (m, n)
+
+
+def get_cuda_argtypes():
+    return [
+        ctypes.c_void_p,  # A (GPU pointer)
+        ctypes.c_void_p,  # B (GPU pointer)
+        ctypes.c_void_p,  # C (GPU pointer)
+        ctypes.c_int,  # m
+        ctypes.c_int,  # k
+        ctypes.c_int,  # n
+    ]
+
+
+def get_cuda_torch_inputs(params: Params):
+    """当需要cuda和torch比较时候使用"""
+    torch.manual_seed(SEED)
+    # GEMM operation: A(m,k) @ B(k,n) = C(m,n)
+    A = torch.randn(params.m, params.k, dtype=torch.float16, device="cuda").normal_(
+        mean=0.0, std=0.5
+    )
+    B = torch.randn(params.k, params.n, dtype=torch.float16, device="cuda").normal_(
+        mean=0.0, std=0.5
+    )
+
+    # Create output tensor (float32 for GEMM)
+    C = torch.empty(params.m, params.n, dtype=torch.float32, device="cuda")
+    cuda_output_tensors = [C]
+
+    cuda_all_inputs = [A, B, C, params.m, params.k, params.n]
+
+    # For PyTorch, inputs are already in correct format
+    torch_all_inputs = [A, B]
+    return cuda_all_inputs, torch_all_inputs, cuda_output_tensors
+
+
+def cuda_output_tensor_transform(cuda_output):
+    # For GEMM operation, no format transformation needed
+    # Both CUDA and PyTorch use the same tensor format
+    return cuda_output
+
+```
+
+## File: check_cuda.py
+```py
+import os
+import sys
+import argparse
+from get_data import get_cuda_torch_inputs, Params, get_cuda_argtypes  # type: ignore
+
+try:
+    from get_data import cuda_output_tensor_transform  # type: ignore
+except ImportError:
+    cuda_output_tensor_transform = lambda x: x
+
+from torch_.ref import torch_kernel  # type: ignore
+from optest.tools.checker import check_cuda_vs_torch
+
+TESTCASE_ROOT_DIR = os.path.dirname(__file__)
+
+sys.path.insert(0, TESTCASE_ROOT_DIR)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="CUDA kernel test")
+    parser.add_argument(
+        "--compile-only",
+        action="store_true",
+        help="Only compile the CUDA kernel without running tests (default: False)",
+    )
+    parser.add_argument(
+        "--no-perf",
+        action="store_true",
+        help="Disable performance testing (default: False, performance testing enabled)",
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    enable_perf = not args.no_perf  # Default is True, disable with --no-perf
+    compile_only = args.compile_only  # Default is False
+    params = Params()
+
+    check_cuda_vs_torch(
+        testcase_root_dir=TESTCASE_ROOT_DIR,
+        get_cuda_torch_inputs=get_cuda_torch_inputs,
+        params=params,
+        torch_kernel=torch_kernel,
+        get_cuda_argtypes=get_cuda_argtypes,
+        output_tensor_transform=cuda_output_tensor_transform,
+        enable_perf=enable_perf,
+        compile_only=compile_only,
+    )
+
+```
+
+## File: check_triton.py
+```py
+import os
+import sys
+import argparse
+from get_data import get_cuda_torch_inputs, Params, cuda_output_tensor_transform  # type: ignore
+from torch_.ref import torch_kernel  # type: ignore
+from triton_.kernel import triton_kernel  # type: ignore
+from optest.tools.checker import check_triton_vs_torch
+
+TESTCASE_ROOT_DIR = os.path.dirname(__file__)
+
+sys.path.insert(0, TESTCASE_ROOT_DIR)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Triton kernel test")
+    parser.add_argument(
+        "--no-perf",
+        action="store_true",
+        help="Disable performance testing (default: False, performance testing enabled)",
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    enable_perf = not args.no_perf  # Default is True, disable with --no-perf
+    params = Params()
+    check_triton_vs_torch(
+        get_cuda_torch_inputs,
+        params,
+        torch_kernel,
+        triton_kernel,
+        cuda_output_tensor_transform,
+        enable_perf=enable_perf,
+    )
+
+```

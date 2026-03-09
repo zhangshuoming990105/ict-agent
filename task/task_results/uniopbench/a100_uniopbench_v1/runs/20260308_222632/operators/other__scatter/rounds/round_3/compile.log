@@ -1,0 +1,9 @@
+
+================================================================================
+Testing Scatter operator with CUDA backend
+Shape: (8, 768, 1, 1)
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

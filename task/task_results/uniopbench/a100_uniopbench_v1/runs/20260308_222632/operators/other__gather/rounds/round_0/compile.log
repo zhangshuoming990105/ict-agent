@@ -1,0 +1,9 @@
+
+================================================================================
+Testing Gather operator with CUDA backend
+Data shape: (50, 128, 4), Indices: 4
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

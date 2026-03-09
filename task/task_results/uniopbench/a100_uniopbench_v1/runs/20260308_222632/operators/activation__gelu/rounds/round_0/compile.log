@@ -1,0 +1,10 @@
+
+================================================================================
+Testing Gelu operator with CUDA backend (single test mode)
+Shape: (2048, 2048), Elements: 4,194,304
+Dtype: torch.float16, Op Level: 4 -> Kernel OpType: 5
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

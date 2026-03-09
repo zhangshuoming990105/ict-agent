@@ -1,0 +1,451 @@
+Operator: other/nms
+Target GPU architecture: sm_80
+Read the workspace files, update cuda_/kernel.cu, and validate your changes with:
+python test.py --compile-only
+python test.py --no-perf
+python test.py
+If variants are supported: python test.py --variants yaml --no-perf
+Work autonomously in this turn. When compile and correctness pass, reply with a short summary.
+
+## File: test.py
+```py
+import os
+import sys
+import argparse
+from dataclasses import dataclass
+
+import torch
+from optest import (
+    TestCase,
+    TensorSpec,
+    ScalarSpec,
+    TestConfig,
+    CUDABackend,
+    TritonBackend,
+    run_test,
+    print_result,
+    create_suite,
+    print_suite_summary,
+)
+
+from optest.execution.benchmark import benchmark_kernel
+from optest.core.result import TestResult
+
+TESTCASE_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_DIR)
+from torch_.ref import torch_kernel
+
+@dataclass
+class NmsParams:
+    num_boxes: int = 2048
+    iou_threshold: float = 0.5
+    dtype: torch.dtype = torch.float32
+
+    @property
+    def total_elements(self):
+        return self.num_boxes * 4
+
+testcase = TestCase(
+    tensor_specs=[
+        TensorSpec("boxes", "dtype", ("num_boxes", 4), "input"),
+        TensorSpec("keep", torch.int32, ("num_boxes",), "output"),
+    ],
+    scalar_specs=[
+        ScalarSpec("num_boxes", int, lambda p: p.num_boxes),
+        ScalarSpec("iou_threshold", float, lambda p: p.iou_threshold),
+    ],
+    torch_kernel=torch_kernel,
+)
+
+def run_nms_logic(params, backend, config):
+    device = "cuda" if backend.name == "CUDA" else "cpu"
+    print(f"\n>> Running NMS: Boxes={params.num_boxes}, Thresh={params.iou_threshold}")
+
+    boxes = torch.rand((params.num_boxes, 4), dtype=params.dtype, device=device)
+    boxes[:, 2:] += boxes[:, :2] 
+    
+    scores = torch.rand(params.num_boxes, dtype=params.dtype, device=device)
+    _, indices = scores.sort(descending=True)
+    sorted_boxes = boxes[indices].contiguous()
+    
+    keep_mask = torch.ones(params.num_boxes, dtype=torch.int32, device=device)
+
+    ref_inputs = [sorted_boxes, params.iou_threshold] 
+    
+    test_inputs = [sorted_boxes, keep_mask, params.num_boxes, params.iou_threshold]
+    test_inputs_ptr = backend.prepare_inputs(test_inputs)
+
+    from optest.execution.runner import TestRunner
+    runner = TestRunner(TESTCASE_DIR, backend)
+    
+    output_ref = runner.ref_backend.execute(testcase.torch_kernel, ref_inputs)
+    
+    kernel = backend.load_kernel(TESTCASE_DIR, testcase.get_argtypes())
+    backend.execute(kernel, test_inputs_ptr)
+    torch.cuda.synchronize()
+    
+    # 自定义验证逻辑 (允许 <1% 的误差)
+    diff = torch.abs(output_ref - keep_mask)
+    mismatches = diff.sum().item()
+    error_rate = mismatches / params.num_boxes
+    is_passed = error_rate < 0.01
+
+    if config.verbose:
+        print(f"   Ref kept: {output_ref.sum().item()}, CUDA kept: {keep_mask.sum().item()}")
+        print(f"   Mismatches: {mismatches} ({error_rate:.2%})")
+
+    if is_passed:
+        if config.enable_perf:
+            print("   Running benchmarks...")
+            
+            ref_ms = benchmark_kernel(
+                testcase.torch_kernel, ref_inputs, 
+                warmup=config.perf_warmup, iterations=config.perf_iterations
+            )
+            
+            test_ms = benchmark_kernel(
+                kernel, test_inputs_ptr,
+                warmup=config.perf_warmup, iterations=config.perf_iterations
+            )
+            
+            speedup = ref_ms / test_ms if test_ms > 0 else 0
+            print("-" * 80)
+            print("PERFORMANCE:")
+            print(f"  Reference: {ref_ms:.5f} ms")
+            print(f"  Test:      {test_ms:.5f} ms")
+            print(f"  Speedup:   {speedup:.2f}x 🚀")
+            print("-" * 80)
+        
+        print("✅ PASSED")
+        return True
+    else:
+        print("❌ FAILED")
+        return False
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--backend", default="cuda")
+    parser.add_argument("--variants", default="none")
+    parser.add_argument("--no-perf", action="store_true")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    args = parser.parse_args()
+
+    config = TestConfig(
+        enable_perf=not args.no_perf,
+        verbose=args.verbose,
+        perf_warmup=100,
+        perf_iterations=1000
+    )
+    backend = CUDABackend() if args.backend == "cuda" else TritonBackend()
+
+    print(f"\n{'=' * 80}")
+    print(f"Testing NMS Operator with {backend.name}")
+    print(f"{'=' * 80}")
+
+    if args.variants == "yaml":
+        # 手动定义变种列表 (模拟 cases.yaml)
+        variants = [
+            NmsParams(num_boxes=1024, iou_threshold=0.5),
+            NmsParams(num_boxes=2048, iou_threshold=0.5),
+            NmsParams(num_boxes=4096, iou_threshold=0.5),
+            NmsParams(num_boxes=8192, iou_threshold=0.7),
+        ]
+        all_passed = True
+        for p in variants:
+            if not run_nms_logic(p, backend, config):
+                all_passed = False
+        sys.exit(0 if all_passed else 1)
+    else:
+        # 单次运行默认参数
+        p = NmsParams()
+        passed = run_nms_logic(p, backend, config)
+        sys.exit(0 if passed else 1)
+
+if __name__ == "__main__":
+    main()
+```
+
+## File: torch_/ref.py
+```py
+import torch
+import torchvision
+
+def torch_kernel(boxes, iou_threshold):
+    num_boxes = boxes.shape[0]
+    scores = torch.arange(num_boxes, 0, -1, device=boxes.device, dtype=torch.float32)
+    
+    keep_indices = torchvision.ops.nms(boxes, scores, iou_threshold)
+    
+    keep_mask = torch.zeros(num_boxes, dtype=torch.int32, device=boxes.device)
+    keep_mask[keep_indices] = 1
+    
+    return keep_mask
+```
+
+## File: cases.yaml
+```yaml
+# operators/vision/nms/cases.yaml
+dtypes:
+  - float32
+
+shapes:
+  # Standard benchmarks
+  - num_boxes: 1024
+    iou_threshold: 0.5
+  
+  - num_boxes: 2048
+    iou_threshold: 0.5
+
+  - num_boxes: 4096
+    iou_threshold: 0.5
+    
+  - num_boxes: 8192
+    iou_threshold: 0.7
+```
+
+## File: get_data.py
+```py
+import torch
+import ctypes
+from dataclasses import dataclass
+from optest.tools.checker import SEED
+
+
+@dataclass
+class Params:
+    input_shape: tuple = (24, 32, 48)
+    output_shape: tuple = (48, 24, 32)
+
+
+def get_cuda_argtypes():
+    return [
+        ctypes.c_void_p,  # input
+        ctypes.c_void_p,  # output
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,  # dimensions
+    ]
+
+
+def get_cuda_torch_inputs(params: Params):
+    torch.manual_seed(SEED)
+    x = torch.randn(params.input_shape, dtype=torch.float32, device="cuda")
+    output = torch.empty(params.output_shape, dtype=torch.float32, device="cuda")
+    dim_args = list(params.input_shape)
+    cuda_all_inputs = [x, output, *dim_args]
+    torch_all_inputs = [x]
+    return cuda_all_inputs, torch_all_inputs, [output]
+
+
+def cuda_output_tensor_transform(tensor):
+    return tensor
+
+```
+
+## File: check_cuda.py
+```py
+import os
+import sys
+import argparse
+from get_data import (
+    get_cuda_torch_inputs,
+    Params,
+    get_cuda_argtypes,
+    cuda_output_tensor_transform,
+)
+from torch_.ref import torch_kernel
+from optest.tools.checker import check_cuda_vs_torch
+
+TESTCASE_ROOT_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_ROOT_DIR)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="transpose_24_32_48 CUDA kernel test")
+    parser.add_argument(
+        "--compile-only",
+        action="store_true",
+        help="Only compile the CUDA kernel without running correctness checks",
+    )
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Disable performance benchmarking"
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    params = Params()
+    check_cuda_vs_torch(
+        testcase_root_dir=TESTCASE_ROOT_DIR,
+        get_cuda_torch_inputs=get_cuda_torch_inputs,
+        params=params,
+        torch_kernel=torch_kernel,
+        get_cuda_argtypes=get_cuda_argtypes,
+        output_tensor_transform=cuda_output_tensor_transform,
+        enable_perf=not args.no_perf,
+        compile_only=args.compile_only,
+    )
+
+```
+
+## File: check_triton.py
+```py
+import os
+import sys
+import argparse
+from get_data import get_cuda_torch_inputs, Params, cuda_output_tensor_transform
+from torch_.ref import torch_kernel
+from triton_.kernel import triton_kernel
+from optest.tools.checker import compare_results
+
+TESTCASE_ROOT_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_ROOT_DIR)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="transpose_24_32_48 Triton kernel test"
+    )
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Placeholder flag for compatibility"
+    )
+    return parser.parse_args()
+
+
+def main():
+    params = Params()
+    _, torch_inputs, _ = get_cuda_torch_inputs(params)
+    torch_output = cuda_output_tensor_transform(torch_kernel(*torch_inputs))
+    triton_output = cuda_output_tensor_transform(triton_kernel(*torch_inputs))
+    compare_results(torch_output, triton_output, test_type=["PyTorch", "Triton"])
+
+
+if __name__ == "__main__":
+    parse_args()
+    main()
+
+```
+
+## Previous kernel
+```cuda
+#include <cuda_runtime.h>
+#include <cstdio>
+
+// Compute IoU between two boxes
+// Box format: [x1, y1, x2, y2]
+__device__ __forceinline__ float compute_iou(const float* box1, const float* box2) {
+    // Intersection area
+    float inter_x1 = fmaxf(box1[0], box2[0]);
+    float inter_y1 = fmaxf(box1[1], box2[1]);
+    float inter_x2 = fminf(box1[2], box2[2]);
+    float inter_y2 = fminf(box1[3], box2[3]);
+    
+    float inter_w = fmaxf(0.0f, inter_x2 - inter_x1);
+    float inter_h = fmaxf(0.0f, inter_y2 - inter_y1);
+    float inter_area = inter_w * inter_h;
+    
+    // Union area
+    float area1 = (box1[2] - box1[0]) * (box1[3] - box1[1]);
+    float area2 = (box2[2] - box2[0]) * (box2[3] - box2[1]);
+    float union_area = area1 + area2 - inter_area;
+    
+    return (union_area > 0.0f) ? (inter_area / union_area) : 0.0f;
+}
+
+// Optimized NMS kernel using shared memory for reference boxes
+__global__ void nms_kernel_optimized(const float* boxes, int* keep, int num_boxes, 
+                                      float iou_threshold, int ref_start, int ref_count) {
+    // Shared memory to cache reference boxes
+    __shared__ float shared_boxes[64][4];  // Cache up to 64 reference boxes
+    
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    // Early exit for out-of-bounds or already suppressed boxes
+    if (idx >= num_boxes) return;
+    
+    // Load reference boxes into shared memory collaboratively
+    int ref_end = min(ref_start + ref_count, num_boxes);
+    int actual_ref_count = ref_end - ref_start;
+    
+    // Each thread helps load reference boxes
+    for (int i = threadIdx.x; i < actual_ref_count * 4; i += blockDim.x) {
+        int ref_idx = i / 4;
+        int coord_idx = i % 4;
+        shared_boxes[ref_idx][coord_idx] = boxes[(ref_start + ref_idx) * 4 + coord_idx];
+    }
+    __syncthreads();
+    
+    // Check if current box is already suppressed
+    if (keep[idx] == 0) return;
+    
+    // Load current box
+    float current_box[4];
+    for (int i = 0; i < 4; i++) {
+        current_box[i] = boxes[idx * 4 + i];
+    }
+    
+    // Check against all reference boxes in shared memory
+    for (int ref_idx = 0; ref_idx < actual_ref_count; ref_idx++) {
+        int global_ref_idx = ref_start + ref_idx;
+        
+        // Only compare with earlier boxes (already processed)
+        if (global_ref_idx >= idx) break;
+        
+        // Skip if reference box is already suppressed
+        if (keep[global_ref_idx] == 0) continue;
+        
+        float iou = compute_iou(shared_boxes[ref_idx], current_box);
+        
+        if (iou > iou_threshold) {
+            keep[idx] = 0;
+            return;
+        }
+    }
+}
+
+extern "C" void cuda_kernel(float* boxes, int* keep, int num_boxes, float iou_threshold) {
+    const int threads_per_block = 256;
+    const int ref_batch_size = 64;  // Process 64 reference boxes per batch
+    
+    int num_blocks = (num_boxes + threads_per_block - 1) / threads_per_block;
+    
+    // Process in batches to fit reference boxes in shared memory
+    for (int ref_start = 0; ref_start < num_boxes; ref_start += ref_batch_size) {
+        nms_kernel_optimized<<<num_blocks, threads_per_block>>>(
+            boxes, keep, num_boxes, iou_threshold, ref_start, ref_batch_size
+        );
+        
+        // Synchronize between batches to ensure keep flags are updated
+        cudaDeviceSynchronize();
+    }
+}
+
+```
+
+## Compile log
+```text
+usage: test.py [-h] [--backend BACKEND] [--variants VARIANTS] [--no-perf] [-v]
+test.py: error: unrecognized arguments: --compile-only
+
+```
+
+## Verification log
+```text
+Skipped because compile-only failed.
+
+```
+
+## Performance log
+```text
+Skipped because correctness checks did not pass.
+
+```
+
+## Variants log
+```text
+Skipped because correctness checks did not pass.
+
+```
+
+Revise the kernel to fix the reported failures while keeping the same interface.

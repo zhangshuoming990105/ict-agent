@@ -1,0 +1,55 @@
+Run ID: 20260308_222632
+Config: /data/yuqiuchu/Project/ict-agent/task/uniopbench/task.yaml
+Benchmark root: /data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench
+[pass] activation/elu in round 0
+[pass] activation/gelu in round 0
+[pass] activation/hardshrink in round 0
+[pass] activation/hardswish in round 0
+[pass] activation/relu in round 0
+[pass] activation/sigmoid in round 0
+[pass] activation/swish in round 0
+[pass] attention/gqa in round 0
+[pass] attention/merge_attn_states in round 0
+[pass] attention/mha in round 0
+[pass] attention/rope in round 0
+[pass] conv/conv1d in round 0
+[retry] conv/conv2d: round 0 failed: compile=0, verify=0, perf=0, variants=False
+[pass] conv/conv2d in round 1
+[pass] conv/depthwiseconv in round 0
+[retry] cvcuda/adaptive_threshold: round 0 failed: compile=1, verify=1, perf=1, variants=False
+[retry] cvcuda/adaptive_threshold: round 1 failed: compile=1, verify=1, perf=1, variants=False
+[pass] cvcuda/adaptive_threshold in round 2
+[pass] elementary/add in round 0
+[pass] elementary/sign in round 0
+[pass] elementary/sin in round 0
+[pass] elementary/square in round 0
+[pass] elementary/sub in round 0
+[pass] matmul/bmm in round 0
+[pass] matmul/dense in round 0
+[pass] matmul/dot-product in round 0
+[pass] matmul/gemm in round 0
+[pass] matmul/gemv in round 0
+[pass] norm/batchnorm in round 0
+[pass] norm/instancenorm in round 0
+[pass] norm/layernorm in round 0
+[pass] norm/rmsnorm in round 0
+[pass] other/concat in round 0
+[retry] other/deformable: round 0 failed: compile=0, verify=1, perf=1, variants=None
+[pass] other/deformable in round 1
+[pass] other/embedding in round 0
+[pass] other/gatemlp in round 0
+[retry] other/gather: round 0 failed: compile=0, verify=1, perf=1, variants=None
+[retry] other/gather: round 1 failed: compile=0, verify=1, perf=1, variants=None
+[retry] other/gather: round 2 failed: compile=0, verify=1, perf=1, variants=None
+[retry] other/gather: round 3 failed: compile=0, verify=1, perf=1, variants=None
+[fail] other/gather
+[retry] other/nms: round 0 failed: compile=2, verify=1, perf=1, variants=False
+[retry] other/nms: round 1 failed: compile=2, verify=1, perf=1, variants=False
+[retry] other/nms: round 2 failed: compile=2, verify=1, perf=1, variants=False
+[retry] other/nms: round 3 failed: compile=2, verify=1, perf=1, variants=False
+[fail] other/nms
+[retry] other/scatter: round 0 failed: compile=0, verify=1, perf=1, variants=None
+[retry] other/scatter: round 1 failed: compile=0, verify=1, perf=1, variants=None
+[retry] other/scatter: round 2 failed: compile=0, verify=1, perf=1, variants=None
+[retry] other/scatter: round 3 failed: compile=0, verify=1, perf=1, variants=None
+[fail] other/scatter

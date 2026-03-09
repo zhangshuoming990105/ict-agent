@@ -1,0 +1,44 @@
+{
+  "operator": "attention/rope",
+  "operator_key": "attention__rope",
+  "status": "passed",
+  "rounds_attempted": 1,
+  "agent_steps_per_round": [
+    17
+  ],
+  "agent_steps_total": 17,
+  "tokens": {
+    "prompt_tokens": 185437,
+    "completion_tokens": 3895,
+    "total_tokens": 189332,
+    "rounds": [
+      {
+        "prompt_tokens": 185437,
+        "completion_tokens": 3895,
+        "total_tokens": 189332
+      }
+    ]
+  },
+  "compile_only": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__rope/rounds/round_0/compile.log"
+  },
+  "verify": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__rope/rounds/round_0/verify.log"
+  },
+  "perf": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__rope/rounds/round_0/perf.log"
+  },
+  "variants": {
+    "executed": true,
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__rope/rounds/round_0/variants.log"
+  },
+  "final_kernel": "artifact/cuda_/kernel.cu",
+  "errors": [],
+  "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/attention/rope",
+  "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__rope/artifact",
+  "supports_variants": true
+}

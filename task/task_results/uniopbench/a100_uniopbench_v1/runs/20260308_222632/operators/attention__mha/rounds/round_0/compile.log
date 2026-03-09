@@ -1,0 +1,9 @@
+
+================================================================================
+Testing MHA operator with CUDA backend
+Shape: (64, 2048, 12, 512)
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

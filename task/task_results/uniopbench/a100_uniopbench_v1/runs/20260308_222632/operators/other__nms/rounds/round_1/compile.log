@@ -1,0 +1,2 @@
+usage: test.py [-h] [--backend BACKEND] [--variants VARIANTS] [--no-perf] [-v]
+test.py: error: unrecognized arguments: --compile-only

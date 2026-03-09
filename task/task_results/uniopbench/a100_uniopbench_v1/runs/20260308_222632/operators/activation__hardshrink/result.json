@@ -1,0 +1,44 @@
+{
+  "operator": "activation/hardshrink",
+  "operator_key": "activation__hardshrink",
+  "status": "passed",
+  "rounds_attempted": 1,
+  "agent_steps_per_round": [
+    19
+  ],
+  "agent_steps_total": 19,
+  "tokens": {
+    "prompt_tokens": 230831,
+    "completion_tokens": 6259,
+    "total_tokens": 237090,
+    "rounds": [
+      {
+        "prompt_tokens": 230831,
+        "completion_tokens": 6259,
+        "total_tokens": 237090
+      }
+    ]
+  },
+  "compile_only": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardshrink/rounds/round_0/compile.log"
+  },
+  "verify": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardshrink/rounds/round_0/verify.log"
+  },
+  "perf": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardshrink/rounds/round_0/perf.log"
+  },
+  "variants": {
+    "executed": true,
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardshrink/rounds/round_0/variants.log"
+  },
+  "final_kernel": "artifact/cuda_/kernel.cu",
+  "errors": [],
+  "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/activation/hardshrink",
+  "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardshrink/artifact",
+  "supports_variants": true
+}

@@ -1,0 +1,9 @@
+
+================================================================================
+Testing Concat operator with CUDA backend
+Input shape: (4, 32, 112, 112), Output shape: (4, 64, 112, 112)
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

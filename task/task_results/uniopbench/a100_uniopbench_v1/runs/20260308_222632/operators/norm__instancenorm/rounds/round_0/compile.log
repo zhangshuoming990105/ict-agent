@@ -1,0 +1,9 @@
+
+================================================================================
+Testing InstanceNorm operator with CUDA backend
+Shape: (1, 3, 224, 224), Channels: 3
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

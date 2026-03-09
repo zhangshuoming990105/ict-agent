@@ -1,0 +1,11 @@
+# cases.yaml for Square operator
+
+dtypes:
+  - float32
+
+shapes:
+  - [128]
+  - [256, 256]
+  - [1024, 1024]
+  - [64, 64, 64]
+

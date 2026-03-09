@@ -1,0 +1,9 @@
+
+================================================================================
+Testing Conv1D operator with CUDA backend
+Input: 7, Kernel: 3, Output: 5
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

@@ -1,0 +1,10 @@
+
+================================================================================
+Testing GEMM Single Mode
+Kernel ID: 3 -> Auto Dtype: torch.float32
+Shape: M=1024, N=1024, K=1024
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

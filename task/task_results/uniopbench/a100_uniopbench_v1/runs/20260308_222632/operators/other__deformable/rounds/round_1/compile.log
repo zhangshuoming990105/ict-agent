@@ -1,0 +1,10 @@
+
+================================================================================
+Testing Deformable Attention operator with CUDA backend
+Batch: 1, Queries: 200, Heads: 8
+Embed dim: 512, Levels: 4, Points: 4
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded
