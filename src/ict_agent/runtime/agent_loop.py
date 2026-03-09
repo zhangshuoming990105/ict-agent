@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from queue import Empty, Queue
 import re
 import threading
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 from ict_agent.commands.common import do_compact, format_turn_usage
 from ict_agent.commands.registry import CommandContext
-from ict_agent.context import ContextManager
+from ict_agent.context import ContextManager, TokenUsage
 from ict_agent.domains.cuda.recovery import (
     RecoveryState,
     ToolExecutionOutcome,
@@ -34,7 +34,7 @@ from ict_agent.runtime.session import (
     to_pending_input_from_preempt_event,
 )
 from ict_agent.runtime.current_context import clear_current_runtime, get_current_runtime, set_current_runtime
-from ict_agent.llm import is_anthropic_client, is_anthropic_model, get_client_for_model
+from ict_agent.llm import is_anthropic_model, get_client_for_model
 from ict_agent.skills import build_skill_prompt, load_skills, select_skills
 from ict_agent.skills import SkillSpec
 from ict_agent.tools import execute_tool, get_all_tool_schemas, get_tool_schema_map, set_shell_safety
@@ -105,6 +105,44 @@ MAX_TOKENS_TOOL_TURN = 2048
 MAX_TOKENS_FINAL_TURN = 8192
 
 
+def _create_openai_chat_completion(
+    client: "OpenAI",
+    model: str,
+    request_messages: list[dict],
+    active_tool_schemas: list[dict],
+    max_tokens: int | None = None,
+) -> Any:
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": request_messages,
+        "tools": active_tool_schemas,
+    }
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+
+    try:
+        return client.chat.completions.create(**kwargs)
+    except Exception as exc:
+        # Log request size for 400 debugging (e.g. gpt-oss vs mco-4 tool_calls strictness)
+        try:
+            n_msgs = len(request_messages)
+            n_tools = len(active_tool_schemas)
+            err_str = str(exc)
+            if "400" in err_str or "Bad Request" in err_str:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "API 400 on chat.completions.create: model=%s messages=%s tools=%s err=%s",
+                    model,
+                    n_msgs,
+                    n_tools,
+                    err_str[:200],
+                )
+        except Exception:  # noqa: S110
+            pass
+        raise
+
+
 def start_async_model_call(
     client: "OpenAI",
     model: str,
@@ -116,29 +154,15 @@ def start_async_model_call(
 
     def worker() -> None:
         try:
-            kwargs: dict = dict(
+            call.response = _create_openai_chat_completion(
+                client=client,
                 model=model,
-                messages=request_messages,
-                tools=active_tool_schemas,
+                request_messages=request_messages,
+                active_tool_schemas=active_tool_schemas,
+                max_tokens=max_tokens,
             )
-            if max_tokens is not None:
-                kwargs["max_tokens"] = max_tokens
-            call.response = client.chat.completions.create(**kwargs)
         except Exception as exc:
             call.error = exc
-            # Log request size for 400 debugging (e.g. gpt-oss vs mco-4 tool_calls strictness)
-            try:
-                n_msgs = len(request_messages)
-                n_tools = len(active_tool_schemas)
-                err_str = str(exc)
-                if "400" in err_str or "Bad Request" in err_str:
-                    import logging
-                    logging.getLogger(__name__).warning(
-                        "API 400 on chat.completions.create: model=%s messages=%s tools=%s err=%s",
-                        model, n_msgs, n_tools, err_str[:200],
-                    )
-            except Exception:  # noqa: S110
-                pass
         finally:
             call.done.set()
 
@@ -377,6 +401,35 @@ def _anthropic_usage_to_openai_like(usage) -> Any:
         "cache_read_input_tokens": cache_read,
         "cache_creation_input_tokens": cache_write,
     })()
+
+
+def request_model_response(
+    client_or_router: "OpenAI",
+    model: str,
+    request_messages: list[dict],
+    active_tool_schemas: list[dict],
+    max_tokens: int | None = None,
+) -> Any:
+    """Create one non-streaming model response using the provider-specific API."""
+    model_client = get_client_for_model(client_or_router, model)
+    if is_anthropic_model(model):
+        system_blocks, anth_messages = _openai_messages_to_anthropic(request_messages)
+        anth_tools = _openai_tools_to_anthropic(active_tool_schemas)
+        anth_resp = model_client.messages.create(
+            model=model,
+            system=system_blocks,
+            messages=anth_messages,
+            tools=anth_tools,
+            max_tokens=max_tokens or MAX_TOKENS_FINAL_TURN,
+        )
+        return _anthropic_response_to_openai_like(anth_resp)
+    return _create_openai_chat_completion(
+        client=model_client,
+        model=model,
+        request_messages=request_messages,
+        active_tool_schemas=active_tool_schemas,
+        max_tokens=max_tokens,
+    )
 
 
 def start_anthropic_streaming_call(
@@ -956,6 +1009,28 @@ def wait_for_fork_threads(runtime_state: dict, timeout_sec: float = 60.0) -> boo
     return len(runtime_state.get("fork_threads") or []) == 0
 
 
+@dataclass
+class BatchTurnResult:
+    assistant_content: str
+    response_model: str
+    steps: int
+    tool_called: bool
+    had_failure: bool
+    error: str | None = None
+    ctx_messages: list[dict] | None = None
+    token_usage: TokenUsage = field(default_factory=TokenUsage)
+
+
+def _token_usage_from_ctx(ctx: ContextManager) -> TokenUsage:
+    return TokenUsage(
+        prompt_tokens=ctx.stats.total_prompt_tokens,
+        completion_tokens=ctx.stats.total_completion_tokens,
+        total_tokens=ctx.stats.total_tokens,
+        cache_read_tokens=ctx.stats.total_cache_read_tokens,
+        cache_write_tokens=ctx.stats.total_cache_write_tokens,
+    )
+
+
 def chat(
     client: "OpenAI",
     model: str,
@@ -1290,3 +1365,254 @@ def chat(
         clear_preempt_request()
         reader_stop_event.set()
         reader_thread.join(timeout=1.0)
+
+def run_batch_turn(
+    client: "OpenAI",
+    model: str,
+    user_input: str,
+    max_tokens: int,
+    max_agent_steps: int,
+    safe_shell: bool,
+    recovery_cleanup: bool,
+    preempt_shell_kill: bool,
+    compact_client: "OpenAI" | None,
+    compact_model: str | None,
+    logger,
+    command_registry,
+    domain_adapter,
+    skills_root: Path,
+) -> BatchTurnResult:
+    del command_registry  # Batch mode does not dispatch slash commands.
+
+    set_shell_safety(safe_shell)
+    set_shell_interrupt_on_preempt(preempt_shell_kill)
+
+    system_prompt = domain_adapter.compose_system_prompt()
+    ctx = ContextManager(system_prompt=system_prompt, max_tokens=max_tokens)
+    all_tool_schemas = get_all_tool_schemas()
+    tool_schema_map = get_tool_schema_map()
+    skills = load_skills(skills_root)
+
+    default_selected_skills = select_skills("", skills, pinned_on=set())
+    default_tool_schemas = resolve_active_tool_schemas(
+        default_selected_skills, tool_schema_map, all_tool_schemas
+    )
+    default_skill_prompt = build_skill_prompt(default_selected_skills)
+    default_skill_names = [skill.name for skill in default_selected_skills]
+
+    runtime_state = {
+        "verbose": False,
+        "safe_shell": safe_shell,
+        "recovery_cleanup": recovery_cleanup,
+        "skills": skills,
+        "pinned_skills": set(),
+        "active_skill_names": default_skill_names,
+        "active_tool_schemas": default_tool_schemas,
+        "active_skill_prompt": default_skill_prompt,
+        "task_dir": domain_adapter.task_dir,
+        "preempt_shell_kill": preempt_shell_kill,
+        "compact_client": compact_client,
+        "compact_model": compact_model,
+        "model": model,
+        "fork_result_queue": Queue(),
+        "fork_job_counter": 0,
+        "fork_results": {},
+        "fork_threads": [],
+    }
+
+    logger.log("ICT Agent batch turn started.")
+    logger.log(f"Model:        {model}")
+    logger.log(f"Workspace:    {domain_adapter.workspace_root}")
+    logger.log(f"Context:      {max_tokens:,} tokens")
+    logger.log(
+        f"Max steps:    {max_agent_steps if max_agent_steps > 0 else 'unlimited'}"
+    )
+
+    if not user_input.strip():
+        return BatchTurnResult(
+            assistant_content="",
+            response_model=model,
+            steps=0,
+            tool_called=False,
+            had_failure=False,
+            error="Empty user input",
+            ctx_messages=list(ctx.messages),
+            token_usage=_token_usage_from_ctx(ctx),
+        )
+
+    try:
+        set_current_runtime(ctx=ctx, runtime_state=runtime_state, client=client, logger=logger)
+        turn_start_index = len(ctx.messages)
+        ctx.add_user_message(user_input)
+
+        selected_skills = select_skills(
+            user_input, runtime_state["skills"], runtime_state["pinned_skills"]
+        )
+        active_tool_schemas = resolve_active_tool_schemas(
+            selected_skills, tool_schema_map, all_tool_schemas
+        )
+        for fork_tool_name in ("fork_subagent", "get_subagent_result"):
+            if fork_tool_name in tool_schema_map and not any(
+                t.get("function", {}).get("name") == fork_tool_name
+                for t in active_tool_schemas
+            ):
+                active_tool_schemas = active_tool_schemas + [tool_schema_map[fork_tool_name]]
+        active_skill_prompt = build_skill_prompt(selected_skills)
+        runtime_state["active_skill_names"] = [skill.name for skill in selected_skills]
+        runtime_state["active_tool_schemas"] = active_tool_schemas
+        runtime_state["active_skill_prompt"] = active_skill_prompt
+        active_tool_names = [t.get("function", {}).get("name", "?") for t in active_tool_schemas]
+        if runtime_state["active_skill_names"]:
+            logger.log(
+                f"  [skills] active: {', '.join(runtime_state['active_skill_names'])}",
+                level="debug",
+            )
+        logger.log(
+            f"  [tools] sending {len(active_tool_schemas)} tools: {', '.join(active_tool_names)}",
+            level="debug",
+        )
+
+        overhead_tokens = ctx.estimate_tokens(str(active_tool_schemas)) + ctx.estimate_tokens(
+            active_skill_prompt
+        )
+        if ctx.needs_compaction(overhead_tokens=overhead_tokens):
+            logger.log("  (Context approaching limit, auto-compacting...)", level="system")
+            do_compact(
+                client,
+                runtime_state["model"],
+                ctx,
+                logger,
+                current_overhead_tokens=overhead_tokens,
+                level="low",
+                compact_client=compact_client,
+                compact_model=compact_model,
+            )
+
+        likely_action_intent = has_action_intent(user_input)
+        autonomy_nudge = ""
+        did_call_tool = False
+        recovery = RecoveryState()
+        set_autonomous_turn(True)
+
+        steps = range(max_agent_steps) if max_agent_steps > 0 else itertools.count()
+        for step_idx in steps:
+            request_messages = list(ctx.messages)
+            if autonomy_nudge:
+                request_messages.append({"role": "system", "content": autonomy_nudge})
+            if active_skill_prompt:
+                request_messages.append({"role": "system", "content": active_skill_prompt})
+
+            response_model = runtime_state["model"]
+            turn_max_tokens = (
+                MAX_TOKENS_TOOL_TURN if (did_call_tool or step_idx > 0) else MAX_TOKENS_FINAL_TURN
+            )
+            response = request_model_response(
+                client_or_router=client,
+                model=response_model,
+                request_messages=request_messages,
+                active_tool_schemas=active_tool_schemas,
+                max_tokens=turn_max_tokens,
+            )
+            ctx.record_usage(response.usage, overhead_tokens=overhead_tokens)
+
+            tool_outcome = process_tool_calls(response, ctx, logger)
+            if tool_outcome.called:
+                did_call_tool = True
+                if tool_outcome.failures:
+                    recovery.record_failures(
+                        tool_outcome.failures, tool_outcome.failure_kinds
+                    )
+                    logger.log(
+                        f"  [recovery] Detected failure ({recovery.last_failure_kind}): "
+                        f"{tool_outcome.failures[-1]}",
+                        level="system",
+                    )
+                    autonomy_nudge = build_recovery_nudge(recovery)
+                else:
+                    recovery.unresolved_failure = False
+                    autonomy_nudge = ""
+                continue
+
+            content = response.choices[0].message.content or ""
+            should_continue = False
+            if likely_action_intent and (
+                max_agent_steps <= 0 or step_idx < max_agent_steps - 1
+            ):
+                if not did_call_tool:
+                    logger.log(
+                        "  [autonomy] Suppressed no-tool reply; continuing...",
+                        level="system",
+                    )
+                    autonomy_nudge = AUTONOMY_NUDGE_TEXT
+                    should_continue = True
+                elif recovery.unresolved_failure:
+                    logger.log(
+                        "  [recovery] Suppressed unresolved-failure reply; continuing...",
+                        level="system",
+                    )
+                    autonomy_nudge = build_recovery_nudge(recovery)
+                    should_continue = True
+                elif is_procedural_confirmation(content):
+                    logger.log(
+                        "  [autonomy] Suppressed procedural-confirmation reply; continuing...",
+                        level="system",
+                    )
+                    autonomy_nudge = AUTONOMY_NUDGE_TEXT
+                    should_continue = True
+            if should_continue:
+                continue
+
+            ctx.add_assistant_message(content)
+            logger.log(f"\nAssistant [{response_model}]: {content}", level="assistant")
+            logger.log(f"  {format_turn_usage(response.usage)}\n", level="info")
+            if recovery_cleanup and recovery.had_failure:
+                removed = ctx.drop_failed_tool_messages(start_index=turn_start_index + 1)
+                if removed > 0:
+                    logger.log(
+                        f"  [recovery] Cleaned {removed} failed intermediate messages from context.\n",
+                        level="system",
+                    )
+            return BatchTurnResult(
+                assistant_content=content,
+                response_model=response_model,
+                steps=step_idx + 1,
+                tool_called=did_call_tool,
+                had_failure=recovery.had_failure,
+                ctx_messages=list(ctx.messages),
+                token_usage=_token_usage_from_ctx(ctx),
+            )
+
+        help_msg = (
+            f"I reached the max autonomous step limit ({max_agent_steps}) for this turn "
+            "and may be stuck. Please provide guidance, constraints, or the next action."
+        )
+        if recovery.failures:
+            help_msg += f" Latest failure: {recovery.failures[-1]}"
+        ctx.add_assistant_message(help_msg)
+        logger.log(f"\nAssistant [{model}]: {help_msg}", level="assistant")
+        return BatchTurnResult(
+            assistant_content=help_msg,
+            response_model=model,
+            steps=max_agent_steps,
+            tool_called=did_call_tool,
+            had_failure=recovery.had_failure,
+            error="max_agent_steps_reached",
+            ctx_messages=list(ctx.messages),
+            token_usage=_token_usage_from_ctx(ctx),
+        )
+    except Exception as exc:
+        logger.log(f"\nError: {exc}\n", level="error")
+        return BatchTurnResult(
+            assistant_content="",
+            response_model=model,
+            steps=0,
+            tool_called=False,
+            had_failure=False,
+            error=str(exc),
+            ctx_messages=list(ctx.messages),
+            token_usage=_token_usage_from_ctx(ctx),
+        )
+    finally:
+        set_autonomous_turn(False)
+        clear_preempt_request()
+        clear_current_runtime()

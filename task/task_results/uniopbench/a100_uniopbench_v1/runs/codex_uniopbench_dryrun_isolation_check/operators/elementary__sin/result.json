@@ -1,0 +1,36 @@
+{
+  "operator": "elementary/sin",
+  "operator_key": "elementary__sin",
+  "status": "dry_run",
+  "rounds_attempted": 0,
+  "agent_steps_per_round": [],
+  "agent_steps_total": 0,
+  "tokens": {
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0,
+    "rounds": []
+  },
+  "compile_only": {
+    "passed": false,
+    "log": ""
+  },
+  "verify": {
+    "passed": false,
+    "log": ""
+  },
+  "perf": {
+    "passed": false,
+    "log": ""
+  },
+  "variants": {
+    "executed": false,
+    "passed": null,
+    "log": ""
+  },
+  "final_kernel": "artifact/cuda_/kernel.cu",
+  "errors": [],
+  "source_dir": "/Users/qiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/elementary/sin",
+  "artifact_dir": "/Users/qiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/codex_uniopbench_dryrun_isolation_check/operators/elementary__sin/artifact",
+  "supports_variants": true
+}
