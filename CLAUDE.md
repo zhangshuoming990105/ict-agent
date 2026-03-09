@@ -16,10 +16,24 @@ ict-agent --sandbox                         # process-level sandbox
 
 The `ict-agent` command is registered via `[project.scripts]` in pyproject.toml; use `python main.py` if not installed.
 
+### System Prompt & Input (Claude Code style)
+
+| Flag | Description |
+|------|--------------|
+| `--system-prompt "..."` | Replace entire system prompt |
+| `--system-prompt-file PATH` | Load system prompt from file (replaces default) |
+| `--append-system-prompt "..."` | Append text to default system prompt |
+| `--append-system-prompt-file PATH` | Append file contents to default system prompt |
+| `--input "..."` / `-i` | Initial user message (first turn) |
+| `--input-file PATH` | Load initial user message from file |
+| `ict-agent "query"` | Positional: initial user message |
+
+When stdin is piped (not a TTY), it is used as the initial user message: `cat prompt.txt | ict-agent`.
+
 ## Testing
 
 ```bash
-python -m pytest tests/unit tests/integration_mock_api -v        # 64 tests, no API
+python -m pytest tests/unit tests/integration_mock_api -v        # 68 tests, no API
 ICT_AGENT_RUN_REAL_API=1 python -m pytest tests/integration_real_api -v  # 6 tests, needs API
 python scripts/run_mixed_e2e.py -v                               # lightweight live e2e (3 turns)
 ```

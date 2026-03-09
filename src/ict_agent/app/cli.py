@@ -89,12 +89,88 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable process-level sandbox for shell commands (requires bubblewrap on Linux or sandbox-exec on macOS)",
     )
+    # System prompt customization (Claude Code style)
+    parser.add_argument(
+        "--system-prompt",
+        type=str,
+        default=None,
+        help="Replace entire system prompt with custom text",
+    )
+    parser.add_argument(
+        "--system-prompt-file",
+        type=str,
+        default=None,
+        help="Load system prompt from file, replacing the default",
+    )
+    parser.add_argument(
+        "--append-system-prompt",
+        type=str,
+        default=None,
+        help="Append text to the default system prompt",
+    )
+    parser.add_argument(
+        "--append-system-prompt-file",
+        type=str,
+        default=None,
+        help="Append file contents to the default system prompt",
+    )
+    # Initial user message (Claude Code style)
+    parser.add_argument(
+        "--input",
+        "-i",
+        type=str,
+        default=None,
+        help="Initial user message (first turn)",
+    )
+    parser.add_argument(
+        "--input-file",
+        type=str,
+        default=None,
+        help="Load initial user message from file",
+    )
+    parser.add_argument(
+        "input_positional",
+        nargs="?",
+        default=None,
+        help="Initial user message (positional, e.g. ict-agent 'fix the bug')",
+    )
     return parser
+
+
+def _resolve_initial_message(
+    task_initial: str | None,
+    args: argparse.Namespace,
+) -> str | None:
+    """Resolve initial user message from CLI args, task, or stdin."""
+    if getattr(args, "input", None):
+        return args.input
+    if getattr(args, "input_file", None):
+        path = Path(args.input_file)
+        if not path.is_file():
+            raise FileNotFoundError(f"Input file not found: {path}")
+        return path.read_text(encoding="utf-8", errors="replace").strip() or None
+    if getattr(args, "input_positional", None):
+        return args.input_positional
+    if task_initial:
+        return task_initial
+    # When stdin is piped (not a TTY), use it as initial message
+    if not sys.stdin.isatty():
+        try:
+            text = sys.stdin.read().strip()
+            return text or None
+        except (EOFError, OSError):
+            pass
+    return None
 
 
 def main() -> int:
     parser = build_parser()
     args, _ = parser.parse_known_args()
+
+    # Validate mutually exclusive system prompt flags
+    if args.system_prompt is not None and args.system_prompt_file is not None:
+        print("Error: --system-prompt and --system-prompt-file are mutually exclusive.", file=sys.stderr)
+        return 1
 
     root_dir = Path(__file__).resolve().parents[3]
     session_id = (os.getenv("ICT_AGENT_SESSION_ID") or "0").strip() or "0"
@@ -124,10 +200,10 @@ def main() -> int:
         set_sandbox_enabled(True)
         if backend == "none":
             import platform
-            sys = platform.system()
-            hint = "apt install bubblewrap" if sys == "Linux" else "sandbox-exec is built into macOS"
+            platform_name = platform.system()
+            hint = "apt install bubblewrap" if platform_name == "Linux" else "sandbox-exec is built into macOS"
             print(
-                f"Warning: --sandbox enabled but no sandbox backend found on {sys}.\n"
+                f"Warning: --sandbox enabled but no sandbox backend found on {platform_name}.\n"
                 f"  Install hint: {hint}\n"
                 f"  Falling back to unsandboxed execution.\n"
             )
@@ -138,16 +214,38 @@ def main() -> int:
         set_gpu_device(args.gpu.strip())
 
     task_dir = None
-    initial_message = None
+    task_initial_message = None
     if args.task:
         domain_adapter.load_task(args.task, args.workdir)
         set_workspace_root(domain_adapter.workspace_root)
         task_dir = domain_adapter.task_dir
-        initial_message = domain_adapter.initial_message
+        task_initial_message = domain_adapter.initial_message
     else:
         workspace = Path(args.workdir or os.getcwd()).resolve()
         set_workspace_root(workspace)
         domain_adapter.workspace_root = workspace
+
+    # Apply system prompt overrides (Claude Code style)
+    if args.system_prompt_file is not None:
+        path = Path(args.system_prompt_file)
+        if not path.is_file():
+            raise FileNotFoundError(f"System prompt file not found: {path}")
+        domain_adapter.system_prompt_override = path.read_text(encoding="utf-8", errors="replace")
+    elif args.system_prompt is not None:
+        domain_adapter.system_prompt_override = args.system_prompt
+
+    append_parts: list[str] = []
+    if args.append_system_prompt_file is not None:
+        path = Path(args.append_system_prompt_file)
+        if not path.is_file():
+            raise FileNotFoundError(f"Append system prompt file not found: {path}")
+        append_parts.append(path.read_text(encoding="utf-8", errors="replace"))
+    if args.append_system_prompt is not None:
+        append_parts.append(args.append_system_prompt)
+    if append_parts:
+        domain_adapter.append_system_prompt = "\n\n".join(p.strip() for p in append_parts if p.strip())
+
+    initial_message = _resolve_initial_message(task_initial_message, args)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_parent = (task_dir / "logs") if task_dir else (root_dir / "logs")

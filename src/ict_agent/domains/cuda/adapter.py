@@ -31,6 +31,8 @@ class CudaDomainAdapter:
         self.task_context_source = ""
         self.safe_shell_default = False
         self.initial_message = None
+        self.system_prompt_override: str | None = None
+        self.append_system_prompt: str = ""
 
     def compose_system_prompt(self) -> str:
         return compose_system_prompt(
@@ -38,6 +40,8 @@ class CudaDomainAdapter:
             history_prompt=self.history_prompt,
             task_prompt=self.task_prompt,
             use_cuda_domain=self.task_dir is not None,
+            system_prompt_override=self.system_prompt_override,
+            append_system_prompt=self.append_system_prompt,
         )
 
     def list_tasks(self) -> str:

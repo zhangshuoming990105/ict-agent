@@ -23,7 +23,8 @@
 | `test_preemption.py` | 1 | 抢占标志 roundtrip |
 | `test_skills.py` | 3 | skills 加载、选择、fork 排除 |
 | `test_task_manager.py` | 3 | 本地 task 解析、prompt 加载、workspace summary |
-| **合计** | **49** | (sandbox 活体测试在无 bwrap/seatbelt 时 skip) |
+| `test_cli_prompt.py` | 4 | CLI system prompt / input 定制（--system-prompt-file、--input 等） |
+| **合计** | **53** | (sandbox 活体测试在无 bwrap/seatbelt 时 skip) |
 
 ```bash
 PYTHONPATH=src python -m pytest tests/unit/ -v
@@ -38,7 +39,7 @@ PYTHONPATH=src python -m pytest tests/unit/ -v
 | 文件 | 测试数 | 说明 |
 |------|--------|------|
 | `test_runtime_smoke.py` | 2 | 工具调用执行（calculator、edit_file） |
-| **合计** | **1** | |
+| **合计** | **2** | |
 
 ```bash
 PYTHONPATH=src python -m pytest tests/integration_mock_api/ -v

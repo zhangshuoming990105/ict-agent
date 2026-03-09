@@ -15,6 +15,9 @@ ict-agent                             # general agent (workspace = cwd)
 ict-agent --task task/example_axpby   # with CUDA task context
 ict-agent --safe-shell                # enable shell command approval
 ict-agent --sandbox                   # process-level sandbox (bubblewrap/seatbelt)
+ict-agent "fix the bug"               # initial user message (positional)
+ict-agent --append-system-prompt-file ./rules.txt   # append custom rules
+cat prompt.txt | ict-agent            # stdin as initial message
 ```
 
 The `ict-agent` command is installed via pip; use `python main.py` as fallback.

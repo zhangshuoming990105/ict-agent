@@ -77,15 +77,23 @@ def compose_system_prompt(
     history_prompt: str = "",
     task_prompt: str = "",
     use_cuda_domain: bool = False,
+    system_prompt_override: str | None = None,
+    append_system_prompt: str = "",
 ) -> str:
-    base = get_general_system_prompt(workspace_root)
-    if use_cuda_domain:
-        base += "\n\n" + get_cuda_system_prompt()
-    extras: list[str] = []
-    if history_prompt:
-        extras.append(history_prompt)
-    if task_prompt:
-        extras.append(task_prompt)
-    if extras:
-        base += "\n\n" + "\n\n".join(extras)
+    """Compose system prompt. If system_prompt_override is set, it replaces the default entirely."""
+    if system_prompt_override is not None:
+        base = system_prompt_override.strip()
+    else:
+        base = get_general_system_prompt(workspace_root)
+        if use_cuda_domain:
+            base += "\n\n" + get_cuda_system_prompt()
+        extras: list[str] = []
+        if history_prompt:
+            extras.append(history_prompt)
+        if task_prompt:
+            extras.append(task_prompt)
+        if extras:
+            base += "\n\n" + "\n\n".join(extras)
+    if append_system_prompt:
+        base += "\n\n" + append_system_prompt.strip()
     return base
