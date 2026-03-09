@@ -58,6 +58,8 @@ class TokenUsage:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
 
 
 @dataclass
@@ -66,6 +68,8 @@ class ConversationStats:
     total_prompt_tokens: int = 0
     total_completion_tokens: int = 0
     total_tokens: int = 0
+    total_cache_read_tokens: int = 0
+    total_cache_write_tokens: int = 0
     history: list[TokenUsage] = field(default_factory=list)
 
     def record(self, usage: TokenUsage) -> None:
@@ -73,6 +77,8 @@ class ConversationStats:
         self.total_prompt_tokens += usage.prompt_tokens
         self.total_completion_tokens += usage.completion_tokens
         self.total_tokens += usage.total_tokens
+        self.total_cache_read_tokens += usage.cache_read_tokens
+        self.total_cache_write_tokens += usage.cache_write_tokens
         self.history.append(usage)
 
 
@@ -253,6 +259,8 @@ class ContextManager:
             prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
             completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
             total_tokens=getattr(usage, "total_tokens", 0) or 0,
+            cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
+            cache_write_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
         )
         self.stats.record(token_usage)
         self._last_prompt_tokens = token_usage.prompt_tokens

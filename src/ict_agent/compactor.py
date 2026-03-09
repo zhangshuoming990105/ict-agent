@@ -83,26 +83,39 @@ def compact_messages(
     conversation_text = _format_messages_for_compaction(messages_to_compact)
 
     def call_once() -> list[dict] | None:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": conversation_text},
-            ],
-            max_tokens=budget,
-            temperature=0.0,
-        )
-        choice = response.choices[0]
-        raw = choice.message.content or ""
-        if choice.finish_reason == "length" and raw:
-            raw = _repair_truncated_json(raw)
+        from ict_agent.llm import is_anthropic_client
+        if is_anthropic_client(client):
+            anth_resp = client.messages.create(
+                model=model,
+                system=[{"type": "text", "text": system_prompt}],
+                messages=[{"role": "user", "content": conversation_text}],
+                max_tokens=budget,
+                temperature=0.0,
+            )
+            raw = anth_resp.content[0].text if anth_resp.content else ""
+            finish = anth_resp.stop_reason or ""
+            if finish == "max_tokens" and raw:
+                raw = _repair_truncated_json(raw)
+        else:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": conversation_text},
+                ],
+                max_tokens=budget,
+                temperature=0.0,
+            )
+            choice = response.choices[0]
+            raw = choice.message.content or ""
+            finish = choice.finish_reason or ""
+            if finish == "length" and raw:
+                raw = _repair_truncated_json(raw)
         result = _parse_compacted_output(raw)
         if result is None:
-            out_tokens = getattr(response.usage, "completion_tokens", "?")
             print(
                 "  (Compaction parse failed. "
-                f"finish_reason={choice.finish_reason}, "
-                f"output_tokens={out_tokens}, budget={budget})"
+                f"finish_reason={finish}, budget={budget})"
             )
         return result
 

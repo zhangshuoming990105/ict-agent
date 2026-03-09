@@ -34,6 +34,7 @@ from ict_agent.runtime.session import (
     to_pending_input_from_preempt_event,
 )
 from ict_agent.runtime.current_context import clear_current_runtime, get_current_runtime, set_current_runtime
+from ict_agent.llm import is_anthropic_client
 from ict_agent.skills import build_skill_prompt, load_skills, select_skills
 from ict_agent.skills import SkillSpec
 from ict_agent.tools import execute_tool, get_all_tool_schemas, get_tool_schema_map, set_shell_safety
@@ -226,6 +227,293 @@ def _assemble_streaming_response(
     return type("Response", (), {"choices": [choice], "usage": usage})()
 
 
+# ---------------------------------------------------------------------------
+#  Anthropic Messages API helpers (prompt caching, format conversion)
+# ---------------------------------------------------------------------------
+
+_CACHE_CTRL = {"type": "ephemeral"}
+
+
+def _openai_tools_to_anthropic(tool_schemas: list[dict]) -> list[dict]:
+    """Convert OpenAI function-calling tool schemas → Anthropic tool format.
+
+    Also adds ``cache_control`` to the **last** tool definition so the entire
+    tool list is included in the cached prefix.
+    """
+    out: list[dict] = []
+    for schema in tool_schemas:
+        fn = schema.get("function", {})
+        params = fn.get("parameters", {})
+        out.append({
+            "name": fn.get("name", ""),
+            "description": fn.get("description", ""),
+            "input_schema": {
+                "type": params.get("type", "object"),
+                "properties": params.get("properties", {}),
+                "required": params.get("required", []),
+            },
+        })
+    # Cache the tool list as part of the prefix
+    if out:
+        out[-1]["cache_control"] = _CACHE_CTRL
+    return out
+
+
+def _openai_messages_to_anthropic(
+    openai_messages: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Convert OpenAI-format messages → Anthropic (system, messages).
+
+    Returns ``(system_blocks, messages)`` where *system_blocks* is a list of
+    text content blocks (with ``cache_control``) and *messages* is the
+    Anthropic ``messages`` parameter.
+
+    Cache breakpoints:
+    - System prompt gets ``cache_control`` (stable across turns).
+    - The last user/tool-result message gets ``cache_control`` (caches the
+      entire conversation prefix up to the current turn).
+    """
+    system_blocks: list[dict] = []
+    messages: list[dict] = []
+
+    for msg in openai_messages:
+        role = msg.get("role")
+        content = msg.get("content", "") or ""
+
+        if role == "system":
+            # All system messages become system blocks with cache_control
+            system_blocks.append({
+                "type": "text",
+                "text": content,
+                "cache_control": _CACHE_CTRL,
+            })
+
+        elif role == "user":
+            messages.append({"role": "user", "content": content})
+
+        elif role == "assistant":
+            tool_calls = msg.get("tool_calls") or []
+            if tool_calls:
+                # Assistant with tool_use → content blocks
+                blocks: list[dict] = []
+                if content:
+                    blocks.append({"type": "text", "text": content})
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    import json as _json
+                    try:
+                        args = _json.loads(fn.get("arguments", "{}"))
+                    except (ValueError, TypeError):
+                        args = {}
+                    blocks.append({
+                        "type": "tool_use",
+                        "id": tc.get("id", ""),
+                        "name": fn.get("name", ""),
+                        "input": args,
+                    })
+                messages.append({"role": "assistant", "content": blocks})
+            else:
+                messages.append({"role": "assistant", "content": content})
+
+        elif role == "tool":
+            # Tool results must be inside a "user" message as tool_result blocks.
+            # If the previous message is already a user with tool_result blocks, append.
+            tool_result_block = {
+                "type": "tool_result",
+                "tool_use_id": msg.get("tool_call_id", ""),
+                "content": content,
+            }
+            if (
+                messages
+                and messages[-1]["role"] == "user"
+                and isinstance(messages[-1]["content"], list)
+                and messages[-1]["content"]
+                and messages[-1]["content"][0].get("type") == "tool_result"
+            ):
+                messages[-1]["content"].append(tool_result_block)
+            else:
+                messages.append({"role": "user", "content": [tool_result_block]})
+
+    # Add cache_control to the last user message (cache conversation prefix)
+    for msg in reversed(messages):
+        if msg["role"] != "user":
+            continue
+        c = msg["content"]
+        if isinstance(c, str):
+            msg["content"] = [{"type": "text", "text": c, "cache_control": _CACHE_CTRL}]
+        elif isinstance(c, list) and c:
+            c[-1] = dict(c[-1])
+            c[-1]["cache_control"] = _CACHE_CTRL
+        break
+
+    return system_blocks, messages
+
+
+def _anthropic_response_to_openai_like(anth_resp: Any) -> Any:
+    """Convert a non-streaming Anthropic response to OpenAI-like shape.
+
+    This lets ``process_tool_calls`` and the rest of the loop work unchanged.
+    """
+    import json as _json
+    content_text = ""
+    tool_calls_acc: dict[int, dict] = {}
+    tc_idx = 0
+    for block in anth_resp.content:
+        if block.type == "text":
+            content_text += block.text
+        elif block.type == "tool_use":
+            tool_calls_acc[tc_idx] = {
+                "id": block.id,
+                "name": block.name,
+                "arguments": _json.dumps(block.input, ensure_ascii=False),
+            }
+            tc_idx += 1
+
+    stop = anth_resp.stop_reason
+    finish_reason = "tool_calls" if stop == "tool_use" else ("stop" if stop == "end_turn" else stop)
+
+    oai_usage = _anthropic_usage_to_openai_like(anth_resp.usage)
+    return _assemble_streaming_response(
+        [content_text] if content_text else [],
+        tool_calls_acc,
+        finish_reason,
+        oai_usage,
+    )
+
+
+def _anthropic_usage_to_openai_like(usage) -> Any:
+    """Wrap Anthropic usage into an object with OpenAI-compatible attribute names.
+
+    This allows ``ContextManager.record_usage()`` and ``format_turn_usage()``
+    to work without changes.
+    """
+    input_tok = getattr(usage, "input_tokens", 0) or 0
+    output_tok = getattr(usage, "output_tokens", 0) or 0
+    cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    return type("Usage", (), {
+        "prompt_tokens": input_tok + cache_read,
+        "completion_tokens": output_tok,
+        "total_tokens": input_tok + output_tok + cache_read + cache_write,
+        "cache_read_input_tokens": cache_read,
+        "cache_creation_input_tokens": cache_write,
+    })()
+
+
+def start_anthropic_streaming_call(
+    client: Any,
+    model: str,
+    request_messages: list[dict],
+    active_tool_schemas: list[dict],
+    max_tokens: int | None = None,
+    logger: Any = None,
+) -> AsyncModelCall:
+    """Streaming call via Anthropic Messages API (with prompt caching).
+
+    Produces the same ``AsyncModelCall`` / response shape as
+    ``start_async_streaming_call`` so the rest of agent_loop is unchanged.
+    """
+    call = AsyncModelCall()
+
+    def worker() -> None:
+        try:
+            system_blocks, anth_messages = _openai_messages_to_anthropic(request_messages)
+            anth_tools = _openai_tools_to_anthropic(active_tool_schemas)
+
+            content_parts: list[str] = []
+            tool_calls_acc: dict[int, dict] = {}
+            finish_reason: str | None = None
+            usage = None
+            tc_index = 0  # running tool_call index for ordering
+
+            with client.messages.stream(
+                model=model,
+                system=system_blocks,
+                messages=anth_messages,
+                tools=anth_tools,
+                max_tokens=max_tokens or MAX_TOKENS_FINAL_TURN,
+            ) as stream:
+                for event in stream:
+                    etype = event.type
+
+                    if etype == "message_start":
+                        # Initial usage (input tokens)
+                        usage = event.message.usage
+
+                    elif etype == "content_block_start":
+                        block = event.content_block
+                        if block.type == "text":
+                            pass  # text deltas arrive in content_block_delta
+                        elif block.type == "tool_use":
+                            idx = tc_index
+                            tc_index += 1
+                            tool_calls_acc[idx] = {
+                                "id": block.id,
+                                "name": block.name,
+                                "arguments": "",
+                            }
+
+                    elif etype == "content_block_delta":
+                        delta = event.delta
+                        if delta.type == "text_delta":
+                            content_parts.append(delta.text)
+                            if logger and hasattr(logger, "print_streaming"):
+                                logger.print_streaming(delta.text)
+                        elif delta.type == "input_json_delta":
+                            # Find the latest tool_call being built
+                            idx = tc_index - 1
+                            if idx in tool_calls_acc:
+                                tool_calls_acc[idx]["arguments"] += delta.partial_json
+
+                    elif etype == "message_delta":
+                        if hasattr(event, "usage") and event.usage:
+                            # Merge final usage (output tokens etc.)
+                            # Create a combined usage by merging initial + delta
+                            if usage is not None:
+                                final_usage = type("MergedUsage", (), {
+                                    "input_tokens": getattr(usage, "input_tokens", 0),
+                                    "output_tokens": getattr(event.usage, "output_tokens", 0) or getattr(usage, "output_tokens", 0),
+                                    "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0),
+                                    "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0),
+                                })()
+                                usage = final_usage
+                        stop = getattr(event.delta, "stop_reason", None)
+                        if stop == "tool_use":
+                            finish_reason = "tool_calls"
+                        elif stop == "end_turn":
+                            finish_reason = "stop"
+                        elif stop:
+                            finish_reason = stop
+
+            # End streaming line if we printed text
+            if content_parts and logger and hasattr(logger, "end_streaming"):
+                logger.end_streaming()
+
+            # Convert Anthropic usage → OpenAI-like for ContextManager
+            if usage is None:
+                oai_usage = type("Usage", (), {
+                    "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+                    "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0,
+                })()
+            else:
+                oai_usage = _anthropic_usage_to_openai_like(usage)
+
+            call.response = _assemble_streaming_response(
+                content_parts, tool_calls_acc, finish_reason, oai_usage,
+            )
+        except Exception as exc:
+            call.error = exc
+        finally:
+            call.done.set()
+
+    threading.Thread(target=worker, daemon=True).start()
+    return call
+
+
+# ---------------------------------------------------------------------------
+#  OpenAI Chat Completions streaming (non-Anthropic models)
+# ---------------------------------------------------------------------------
+
 def start_async_streaming_call(
     client: "OpenAI",
     model: str,
@@ -234,7 +522,7 @@ def start_async_streaming_call(
     max_tokens: int | None = None,
     logger: Any = None,
 ) -> AsyncModelCall:
-    """Like start_async_model_call but uses streaming for real-time output."""
+    """Streaming call via OpenAI Chat Completions API."""
     call = AsyncModelCall()
 
     def worker() -> None:
@@ -256,20 +544,17 @@ def start_async_streaming_call(
 
             for chunk in stream:
                 if not chunk.choices:
-                    # Some providers send usage in the final chunk with empty choices
                     if hasattr(chunk, "usage") and chunk.usage:
                         usage = chunk.usage
                     continue
                 delta = chunk.choices[0].delta
                 finish_reason = chunk.choices[0].finish_reason or finish_reason
 
-                # Accumulate text content and stream to terminal
                 if hasattr(delta, "content") and delta.content:
                     content_parts.append(delta.content)
                     if logger and hasattr(logger, "print_streaming"):
                         logger.print_streaming(delta.content)
 
-                # Accumulate tool calls incrementally
                 if hasattr(delta, "tool_calls") and delta.tool_calls:
                     for tc_delta in delta.tool_calls:
                         idx = tc_delta.index if hasattr(tc_delta, "index") else 0
@@ -287,11 +572,9 @@ def start_async_streaming_call(
                 if hasattr(chunk, "usage") and chunk.usage:
                     usage = chunk.usage
 
-            # End streaming line if we printed text content
             if content_parts and logger and hasattr(logger, "end_streaming"):
                 logger.end_streaming()
 
-            # Build a usage fallback if provider didn't send it
             if usage is None:
                 usage = type("Usage", (), {
                     "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
@@ -526,22 +809,32 @@ def run_fork_skill(
     if not active_tool_schemas:
         return "Error: fork skill has no tools available (check skill's tools list and tool registry)."
 
+    _use_anthropic = is_anthropic_client(client)
     last_content = ""
     for step_idx in range(max_steps):
         try:
             request_messages = list(ctx.messages)
-            async_call = start_async_model_call(
-                client=client,
-                model=model,
-                request_messages=request_messages,
-                active_tool_schemas=active_tool_schemas,
-            )
-            async_call.done.wait(timeout=300)
-            if async_call.error is not None:
-                raise async_call.error
-            if async_call.response is None:
-                raise RuntimeError("Model call ended without response.")
-            response = async_call.response
+            if _use_anthropic:
+                system_blocks, anth_messages = _openai_messages_to_anthropic(request_messages)
+                anth_tools = _openai_tools_to_anthropic(active_tool_schemas)
+                anth_resp = client.messages.create(
+                    model=model, system=system_blocks, messages=anth_messages,
+                    tools=anth_tools, max_tokens=MAX_TOKENS_FINAL_TURN,
+                )
+                response = _anthropic_response_to_openai_like(anth_resp)
+            else:
+                async_call = start_async_model_call(
+                    client=client,
+                    model=model,
+                    request_messages=request_messages,
+                    active_tool_schemas=active_tool_schemas,
+                )
+                async_call.done.wait(timeout=300)
+                if async_call.error is not None:
+                    raise async_call.error
+                if async_call.response is None:
+                    raise RuntimeError("Model call ended without response.")
+                response = async_call.response
             ctx.record_usage(response.usage, overhead_tokens=0)
 
             tool_outcome = process_tool_calls(response, ctx, fork_log)
@@ -894,7 +1187,8 @@ def chat(
 
                     response_model = runtime_state["model"]
                     turn_max_tokens = MAX_TOKENS_TOOL_TURN if (did_call_tool or step_idx > 0) else MAX_TOKENS_FINAL_TURN
-                    async_call = start_async_streaming_call(
+                    _streaming_fn = start_anthropic_streaming_call if is_anthropic_client(client) else start_async_streaming_call
+                    async_call = _streaming_fn(
                         client=client,
                         model=response_model,
                         request_messages=request_messages,
@@ -1144,11 +1438,24 @@ def run_batch_turn(
                 request_messages.append({"role": "system", "content": active_skill_prompt})
 
             response_model = runtime_state["model"]
-            response = client.chat.completions.create(
-                model=response_model,
-                messages=request_messages,
-                tools=active_tool_schemas,
-            )
+            if is_anthropic_client(client):
+                # Non-streaming Anthropic call for batch mode
+                system_blocks, anth_messages = _openai_messages_to_anthropic(request_messages)
+                anth_tools = _openai_tools_to_anthropic(active_tool_schemas)
+                anth_resp = client.messages.create(
+                    model=response_model,
+                    system=system_blocks,
+                    messages=anth_messages,
+                    tools=anth_tools,
+                    max_tokens=MAX_TOKENS_FINAL_TURN,
+                )
+                response = _anthropic_response_to_openai_like(anth_resp)
+            else:
+                response = client.chat.completions.create(
+                    model=response_model,
+                    messages=request_messages,
+                    tools=active_tool_schemas,
+                )
             ctx.record_usage(response.usage, overhead_tokens=overhead_tokens)
 
             tool_outcome = process_tool_calls(response, ctx, logger)
