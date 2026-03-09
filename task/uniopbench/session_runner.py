@@ -23,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="UniOpBench live session runner")
     parser.add_argument("--workspace", required=True, help="Workspace root for this operator session")
     parser.add_argument("--system-prompt-file", required=True, help="Injected system prompt file")
+    parser.add_argument("--initial-message-file", required=True, help="Initial user message file")
     parser.add_argument("--log-path", required=True, help="Agent log file path")
     parser.add_argument("--provider", default="auto", help="LLM provider")
     parser.add_argument("--model", required=True, help="LLM model name")
@@ -38,6 +39,7 @@ def main(argv: list[str] | None = None) -> int:
 
     workspace = Path(args.workspace).resolve()
     system_prompt_path = Path(args.system_prompt_file).resolve()
+    initial_message_path = Path(args.initial_message_file).resolve()
     log_path = Path(args.log_path).resolve()
 
     client, provider_name, default_model, base_url = create_client(args.provider)
@@ -73,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
             safe_shell=False,
             recovery_cleanup=True,
             preempt_shell_kill=False,
-            initial_message=None,
+            initial_message=initial_message_path.read_text(encoding="utf-8"),
             compact_client=client,
             compact_model=compact_model,
             logger=logger,

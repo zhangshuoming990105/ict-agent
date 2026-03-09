@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import os
 import re
-import select
 import shutil
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -72,7 +72,7 @@ class Logger:
         self._handle = self._path.open("a", encoding="utf-8")
 
     def log(self, message: str) -> None:
-        print(message, flush=True)
+        print(message)
         self._handle.write(message + "\n")
         self._handle.flush()
 
@@ -252,7 +252,6 @@ def build_prompt(
     task_config: TaskConfig,
     operator: str,
     operator_dir: Path,
-    prior_round: dict[str, Any] | None,
     artifact_rel_path: str = "",
 ) -> tuple[str, str]:
     system_parts = [
@@ -260,7 +259,6 @@ def build_prompt(
         "Use tools to inspect files, edit cuda_/kernel.cu, and run the existing test.py commands autonomously.",
         "Do not modify any file other than cuda_/kernel.cu unless the scaffold itself is broken.",
         "The generated kernel must preserve the existing exported C interface expected by the operator's test.py.",
-        "Turn-specific request files may appear under .uniopbench/requests/; read the file referenced by the user turn and treat it as the detailed task instruction for that turn.",
     ]
     if artifact_rel_path:
         system_parts.append(
@@ -299,19 +297,6 @@ def build_prompt(
             f"\n## File: {rel}\n```{lang}\n{path.read_text(encoding='utf-8', errors='replace')}\n```"
         )
 
-    if prior_round is not None:
-        user_parts.append("\n## Previous kernel\n```cuda\n" + prior_round["kernel"] + "\n```")
-        if prior_round.get("compile_log"):
-            user_parts.append("\n## Compile log\n```text\n" + prior_round["compile_log"] + "\n```")
-        if prior_round.get("verify_log"):
-            user_parts.append("\n## Verification log\n```text\n" + prior_round["verify_log"] + "\n```")
-        if prior_round.get("perf_log"):
-            user_parts.append("\n## Performance log\n```text\n" + prior_round["perf_log"] + "\n```")
-        if prior_round.get("variants_log"):
-            user_parts.append("\n## Variants log\n```text\n" + prior_round["variants_log"] + "\n```")
-        user_parts.append(
-            "\nRevise the kernel to fix the reported failures while keeping the same interface."
-        )
     if task_config.prompt.extra_user:
         user_parts.append(task_config.prompt.extra_user)
 
@@ -438,16 +423,23 @@ class LiveAgentSession:
         task_config: TaskConfig,
         workspace_dir: Path,
         system_prompt_path: Path,
+        initial_message_path: Path,
         session_log_path: Path,
+        mirror_logger: Logger | None = None,
     ) -> None:
         runner_path = repo_root() / "task" / "uniopbench" / "session_runner.py"
+        session_log_path.parent.mkdir(parents=True, exist_ok=True)
+        session_log_path.unlink(missing_ok=True)
         cmd = [
             sys.executable,
+            "-u",
             str(runner_path),
             "--workspace",
             str(workspace_dir),
             "--system-prompt-file",
             str(system_prompt_path),
+            "--initial-message-file",
+            str(initial_message_path),
             "--log-path",
             str(session_log_path),
             "--provider",
@@ -471,9 +463,17 @@ class LiveAgentSession:
             bufsize=1,
         )
         self._session_log_path = session_log_path
+        self._mirror_logger = mirror_logger
         self._usage_snapshot = UsageSnapshot()
         self._last_output_tail: list[str] = []
-        self._read_until_ready(timeout_sec=120)
+        self._stdout_tail: list[str] = []
+        self._stdout_lock = threading.Lock()
+        self._log_char_offset = 0
+        self._mirror_char_offset = 0
+        self._ready_count = 0
+        self._stdout_thread = threading.Thread(target=self._drain_stdout, daemon=True)
+        self._stdout_thread.start()
+        self._initial_turn_output = self._read_until_ready(timeout_sec=1800)
 
     @property
     def session_log_path(self) -> Path:
@@ -484,28 +484,69 @@ class LiveAgentSession:
         if len(self._last_output_tail) > 200:
             self._last_output_tail = self._last_output_tail[-200:]
 
-    def _read_until_ready(self, timeout_sec: int) -> list[str]:
+    def _remember_stdout_line(self, line: str) -> None:
+        with self._stdout_lock:
+            self._stdout_tail.append(line)
+            if len(self._stdout_tail) > 200:
+                self._stdout_tail = self._stdout_tail[-200:]
+
+    def _drain_stdout(self) -> None:
         if self._proc.stdout is None:
-            raise RuntimeError("Live agent session stdout is unavailable.")
-        deadline = time.monotonic() + timeout_sec
-        lines: list[str] = []
-        while time.monotonic() < deadline:
-            ready, _, _ = select.select([self._proc.stdout], [], [], 1.0)
-            if not ready:
-                if self._proc.poll() is not None:
-                    break
-                continue
+            return
+        while True:
             line = self._proc.stdout.readline()
             if line == "":
-                if self._proc.poll() is not None:
-                    break
-                continue
-            lines.append(line)
-            if line.strip() == _READY_MARKER:
+                break
+            self._remember_stdout_line(line)
+
+    def _tail_debug_text(self) -> str:
+        parts: list[str] = []
+        if self._session_log_path.is_file():
+            try:
+                text = self._session_log_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                text = ""
+            if text:
+                parts.append(text[-4000:])
+        with self._stdout_lock:
+            if self._stdout_tail:
+                parts.append("".join(self._stdout_tail[-40:]))
+        return "\n".join(part for part in parts if part).strip()
+
+    def _mirror_new_log_text(self, text: str) -> None:
+        if self._mirror_logger is None:
+            return
+        if len(text) <= self._mirror_char_offset:
+            return
+        new_text = text[self._mirror_char_offset :]
+        self._mirror_char_offset = len(text)
+        for line in new_text.splitlines():
+            self._mirror_logger.log(line)
+
+    def _read_until_ready(self, timeout_sec: int) -> list[str]:
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            try:
+                text = (
+                    self._session_log_path.read_text(encoding="utf-8", errors="replace")
+                    if self._session_log_path.is_file()
+                    else ""
+                )
+            except OSError:
+                text = ""
+            self._mirror_new_log_text(text)
+            ready_count = text.count(_READY_MARKER)
+            if ready_count > self._ready_count:
+                new_text = text[self._log_char_offset :]
+                lines = new_text.splitlines(keepends=True)
+                self._log_char_offset = len(text)
+                self._ready_count = ready_count
                 self._remember_lines(lines)
                 return lines
-        self._remember_lines(lines)
-        tail = "".join(self._last_output_tail[-40:])
+            if self._proc.poll() is not None:
+                break
+            time.sleep(1.0)
+        tail = self._tail_debug_text()
         raise TimeoutError(
             "Timed out waiting for live agent readiness."
             + (f"\nLast output:\n{tail}" if tail else "")
@@ -526,9 +567,8 @@ class LiveAgentSession:
         self,
         round_dir: Path,
         request_payload: dict[str, Any],
-        live_user_input: str,
     ) -> dict[str, Any]:
-        turn_output = self.send(live_user_input, timeout_sec=1800)
+        turn_output = self._initial_turn_output
         token_output = self.send("/tokens", timeout_sec=60)
         raw_output = self.send("/debug raw", timeout_sec=60)
 
@@ -556,7 +596,6 @@ class LiveAgentSession:
                 "completion_tokens": usage_snapshot.completion_tokens,
                 "total_tokens": usage_snapshot.total_tokens,
             },
-            "live_user_input": live_user_input,
         }
 
         if ctx_messages:
@@ -571,16 +610,17 @@ class LiveAgentSession:
         return response_payload
 
     def close(self) -> None:
-        if self._proc.poll() is not None:
-            return
         try:
-            if self._proc.stdin is not None:
+            if self._proc.poll() is None and self._proc.stdin is not None:
                 self._proc.stdin.write("quit\n")
                 self._proc.stdin.flush()
-            self._proc.wait(timeout=10)
+            if self._proc.poll() is None:
+                self._proc.wait(timeout=10)
         except Exception:
-            self._proc.kill()
-            self._proc.wait(timeout=5)
+            if self._proc.poll() is None:
+                self._proc.kill()
+                self._proc.wait(timeout=5)
+        self._stdout_thread.join(timeout=1.0)
 
 
 def subprocess_env(task_config: TaskConfig) -> dict[str, str]:
@@ -691,19 +731,17 @@ def run_uniopbench_task(args) -> int:
             rounds_dir = op_dir / "rounds"
             prompt_dir.mkdir(parents=True, exist_ok=True)
             rounds_dir.mkdir(parents=True, exist_ok=True)
-            copy_operator_tree(source_dir, artifact_dir)
 
             result = operator_result_template(operator, operator_key)
             result["source_dir"] = str(source_dir)
             result["artifact_dir"] = str(artifact_dir)
             result["supports_variants"] = supports_variants(source_dir / "test.py")
 
-            prior_round: dict[str, Any] | None = None
             # Each operator gets its own workspace (artifact_dir) and isolated agent session/context
             artifact_rel = ""  # workspace is artifact_dir; no cwd override needed
             if args.dry_run:
                 system_prompt, user_prompt = build_prompt(
-                    task_config, operator, source_dir, None, artifact_rel_path=artifact_rel
+                    task_config, operator, source_dir, artifact_rel_path=artifact_rel
                 )
                 write_text(prompt_dir / "system.txt", system_prompt)
                 write_text(prompt_dir / "user.txt", user_prompt)
@@ -714,23 +752,15 @@ def run_uniopbench_task(args) -> int:
                 logger.log(f"[dry-run] prepared {operator}")
                 continue
 
-            (artifact_dir / ".uniopbench" / "requests").mkdir(parents=True, exist_ok=True)
             for round_idx in range(task_config.experiment.max_repair_rounds + 1):
                 round_dir = rounds_dir / f"round_{round_idx}"
                 round_dir.mkdir(parents=True, exist_ok=True)
+                copy_operator_tree(source_dir, artifact_dir)
                 system_prompt, user_prompt = build_prompt(
-                    task_config, operator, source_dir, prior_round, artifact_rel_path=artifact_rel
+                    task_config, operator, source_dir, artifact_rel_path=artifact_rel
                 )
                 write_text(prompt_dir / "system.txt", system_prompt)
                 write_text(prompt_dir / "user.txt", user_prompt)
-
-                request_rel_path = Path(".uniopbench") / "requests" / f"round_{round_idx}.md"
-                request_path = artifact_dir / request_rel_path
-                write_text(request_path, user_prompt)
-                live_user_input = (
-                    f"Read {request_rel_path.as_posix()} in the workspace root and follow its instructions autonomously. "
-                    "Use tools as needed, and reply with a short summary when you finish this turn."
-                )
 
                 request_payload = {
                     "provider": task_config.experiment.provider,
@@ -739,29 +769,33 @@ def run_uniopbench_task(args) -> int:
                     "workspace_root": str(artifact_dir),
                     "system_prompt": system_prompt,
                     "user_prompt": user_prompt,
-                    "request_file": str(request_path),
-                    "live_user_input": live_user_input,
+                    "initial_message_file": str(prompt_dir / "user.txt"),
                     "max_agent_steps": _resolve_max_agent_steps(task_config.experiment),
                     "session_mode": "chat",
                     "session_scope": "per_round",
+                    "workspace_reset": True,
                 }
                 for key in ("temperature", "top_p", "top_k"):
                     if (val := getattr(task_config.experiment, key)) is not None:
                         request_payload[key] = val
 
                 session_log_path = round_dir / "agent_session.log"
-                logger.log(f"[run] {operator} round {round_idx}: launching agent session (tail {session_log_path.relative_to(run_dir)} for live output)...")
+                logger.log(
+                    f"[run] {operator} round {round_idx}: launching agent session "
+                    f"(tail {session_log_path.relative_to(run_dir)} for live output)..."
+                )
                 session = LiveAgentSession(
                     task_config=task_config,
                     workspace_dir=artifact_dir,
                     system_prompt_path=prompt_dir / "system.txt",
+                    initial_message_path=prompt_dir / "user.txt",
                     session_log_path=session_log_path,
+                    mirror_logger=logger,
                 )
                 try:
                     response_payload = session.run_round(
                         round_dir=round_dir,
                         request_payload=request_payload,
-                        live_user_input=live_user_input,
                     )
                 finally:
                     session.close()
@@ -869,13 +903,6 @@ def run_uniopbench_task(args) -> int:
                 )
                 result["errors"].append(error_message)
                 logger.log(f"[retry] {operator}: {error_message}")
-                prior_round = {
-                    "kernel": kernel_source,
-                    "compile_log": compile_log,
-                    "verify_log": verify_log,
-                    "perf_log": perf_log,
-                    "variants_log": variants_log,
-                }
             else:
                 result["status"] = "failed"
 
