@@ -19,6 +19,9 @@ dev = [
   "pytest>=8.0.0",
 ]
 
+[project.scripts]
+ict-agent = "ict_agent.app.cli:main"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

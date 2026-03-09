@@ -751,7 +751,7 @@ def chat(
         logger.log("History: loaded previous implementation for reference")
     if domain_adapter.task_context_source:
         logger.log(f"Task context: loaded from {domain_adapter.task_context_source}")
-    logger.log("Type /help for commands, 'quit' to exit.\n")
+    logger.log("Type /help for commands, 'quit' or Ctrl+C to exit.\n")
 
     user_queue: Queue[tuple[str, str]] = Queue()
     reader_stop_event = threading.Event()

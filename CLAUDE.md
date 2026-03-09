@@ -8,11 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pip install -e ".[dev]"
 export KSYUN_API_KEY="your-key"
 
-python main.py                              # workspace = cwd
-python main.py --task task/example_axpby    # CUDA task context
-python main.py --safe-shell                 # shell command approval
-python main.py --sandbox                    # process-level sandbox
+ict-agent                                   # workspace = cwd (or python main.py)
+ict-agent --task task/example_axpby         # CUDA task context
+ict-agent --safe-shell                      # shell command approval
+ict-agent --sandbox                         # process-level sandbox
 ```
+
+The `ict-agent` command is registered via `[project.scripts]` in pyproject.toml; use `python main.py` if not installed.
 
 ## Testing
 

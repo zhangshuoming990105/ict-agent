@@ -201,6 +201,9 @@ def main() -> int:
             domain_adapter=domain_adapter,
             skills_root=root_dir / "skills",
         )
+    except KeyboardInterrupt:
+        logger.log("\nBye!")
+        return 130
     finally:
         logger.log(f"\nLog saved to: {log_dir / f'{timestamp}.log'}")
         logger.close()

@@ -11,11 +11,13 @@ A modular coding agent runtime with streaming responses, tool-calling, sandbox i
 pip install -e ".[dev]"
 export KSYUN_API_KEY="your-key"       # or INFINI_API_KEY
 
-python main.py                         # general agent (workspace = cwd)
-python main.py --task task/example_axpby  # with CUDA task context
-python main.py --safe-shell            # enable shell command approval
-python main.py --sandbox               # process-level sandbox (bubblewrap/seatbelt)
+ict-agent                             # general agent (workspace = cwd)
+ict-agent --task task/example_axpby   # with CUDA task context
+ict-agent --safe-shell                # enable shell command approval
+ict-agent --sandbox                   # process-level sandbox (bubblewrap/seatbelt)
 ```
+
+The `ict-agent` command is installed via pip; use `python main.py` as fallback.
 
 ## Key Features
 
@@ -62,9 +64,9 @@ See `docs/testing.md` for full test roster, live session testing patterns, and C
 ## Provider & Model Selection
 
 ```bash
-python main.py --list-providers                 # ksyun (default), infini, auto
-python main.py --list-models                    # list available models
-python main.py --provider ksyun --model mco-4   # specific provider/model
+ict-agent --list-providers                 # ksyun (default), infini, auto
+ict-agent --list-models                     # list available models
+ict-agent --provider ksyun --model mco-4    # specific provider/model
 ```
 
 ## Documentation
