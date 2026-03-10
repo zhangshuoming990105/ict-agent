@@ -1,0 +1,60 @@
+# BatchNorm test variants
+# Named parameter format: all parameters explicitly defined
+dtypes:
+  - float32
+  - float16
+
+shapes:
+  # Large batch, moderate channels
+  - shape: [128, 32, 32, 32]
+    batch_size: 128
+    num_channels: 32
+    height: 32
+    width: 32
+    spatial_size: 1024
+    eps: 1e-5
+
+  # Medium batch, many channels
+  - shape: [16, 20, 10, 128]
+    batch_size: 16
+    num_channels: 20
+    height: 10
+    width: 128
+    spatial_size: 1280
+    eps: 1e-5
+
+  # Standard image size
+  - shape: [16, 3, 32, 32]
+    batch_size: 16
+    num_channels: 3
+    height: 32
+    width: 32
+    spatial_size: 1024
+    eps: 1e-5
+
+  # Single batch, many channels
+  - shape: [1, 128, 3, 3]
+    batch_size: 1
+    num_channels: 128
+    height: 3
+    width: 3
+    spatial_size: 9
+    eps: 1e-5
+
+  # Single batch, RGB, large spatial
+  - shape: [1, 3, 224, 224]
+    batch_size: 1
+    num_channels: 3
+    height: 224
+    width: 224
+    spatial_size: 50176
+    eps: 1e-5
+
+  # Edge case: 1x1x1
+  - shape: [1, 512, 1, 1]
+    batch_size: 1
+    num_channels: 512
+    height: 1
+    width: 1
+    spatial_size: 1
+    eps: 1e-5

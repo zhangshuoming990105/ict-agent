@@ -1,0 +1,67 @@
+{
+  "operator": "other/gather",
+  "operator_key": "other__gather",
+  "status": "failed",
+  "rounds_attempted": 4,
+  "agent_steps_per_round": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "agent_steps_total": 0,
+  "tokens": {
+    "prompt_tokens": 1259904,
+    "completion_tokens": 20637,
+    "total_tokens": 1280541,
+    "rounds": [
+      {
+        "prompt_tokens": 90608,
+        "completion_tokens": 2742,
+        "total_tokens": 93350
+      },
+      {
+        "prompt_tokens": 908439,
+        "completion_tokens": 12841,
+        "total_tokens": 921280
+      },
+      {
+        "prompt_tokens": 58340,
+        "completion_tokens": 1384,
+        "total_tokens": 59724
+      },
+      {
+        "prompt_tokens": 202517,
+        "completion_tokens": 3670,
+        "total_tokens": 206187
+      }
+    ]
+  },
+  "compile_only": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gather/rounds/round_3/compile.log"
+  },
+  "verify": {
+    "passed": false,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gather/rounds/round_3/verify.log"
+  },
+  "perf": {
+    "passed": false,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gather/rounds/round_3/perf.log"
+  },
+  "variants": {
+    "executed": false,
+    "passed": null,
+    "log": ""
+  },
+  "final_kernel": "artifact/cuda_/kernel.cu",
+  "errors": [
+    "round 0 failed: compile=0, verify=1, perf=1, variants=None",
+    "round 1 failed: compile=0, verify=1, perf=1, variants=None",
+    "round 2 failed: compile=0, verify=1, perf=1, variants=None",
+    "round 3 failed: compile=0, verify=1, perf=1, variants=None"
+  ],
+  "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/other/gather",
+  "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gather/artifact",
+  "supports_variants": false
+}

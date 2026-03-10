@@ -1,0 +1,44 @@
+{
+  "operator": "matmul/gemm",
+  "operator_key": "matmul__gemm",
+  "status": "passed",
+  "rounds_attempted": 1,
+  "agent_steps_per_round": [
+    47
+  ],
+  "agent_steps_total": 47,
+  "tokens": {
+    "prompt_tokens": 1962677,
+    "completion_tokens": 43948,
+    "total_tokens": 2006625,
+    "rounds": [
+      {
+        "prompt_tokens": 1962677,
+        "completion_tokens": 43948,
+        "total_tokens": 2006625
+      }
+    ]
+  },
+  "compile_only": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemm/rounds/round_0/compile.log"
+  },
+  "verify": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemm/rounds/round_0/verify.log"
+  },
+  "perf": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemm/rounds/round_0/perf.log"
+  },
+  "variants": {
+    "executed": true,
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemm/rounds/round_0/variants.log"
+  },
+  "final_kernel": "artifact/cuda_/kernel.cu",
+  "errors": [],
+  "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/matmul/gemm",
+  "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemm/artifact",
+  "supports_variants": true
+}

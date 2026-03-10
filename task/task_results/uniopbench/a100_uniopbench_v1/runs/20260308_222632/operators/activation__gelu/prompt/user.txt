@@ -1,0 +1,358 @@
+Operator: activation/gelu
+Target GPU architecture: sm_80
+Read the workspace files, update cuda_/kernel.cu, and validate your changes with:
+python test.py --compile-only
+python test.py --no-perf
+python test.py
+If variants are supported: python test.py --variants yaml --no-perf
+Work autonomously in this turn. When compile and correctness pass, reply with a short summary.
+
+## File: test.py
+```py
+import os
+import sys
+import argparse
+from dataclasses import dataclass
+
+import torch
+from optest import (
+    TestCase,
+    TensorSpec,
+    ScalarSpec,
+    TestConfig,
+    CUDABackend,
+    TritonBackend,
+    run_test,
+    print_result,
+    create_suite,
+    print_suite_summary,
+)
+
+from torch_.ref import torch_kernel
+
+# Add parent directory to path for imports
+TESTCASE_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_DIR)
+
+
+@dataclass
+class GeluParams:
+    shape: tuple = (2048, 2048)
+    dtype: torch.dtype = torch.float16
+    op_levels: int = 4
+
+    @property
+    def final_op_type(self) -> int:
+        # Kernel OP_TYPE Definition:
+        # 0: f32 scalar, 1: f32x4
+        # 2: f16 scalar, 3: f16x2, 4: f16x8_unpack, 5: f16x8_pack
+        if self.dtype == torch.float32:
+            return 0 if self.op_levels == 0 else 1
+        else:
+            mapping = {0: 2, 1: 3, 2: 4, 3: 5}
+            return mapping.get(self.op_levels, 5)
+
+    @property
+    def total_elements(self) -> int:
+        num = 1
+        for s in self.shape: num *= s
+        return num
+
+
+testcase = TestCase(
+    tensor_specs=[
+        TensorSpec("input", "dtype", ("shape",), "input"),
+        TensorSpec("output", "dtype", ("shape",), "output"),
+    ],
+    scalar_specs=[
+        ScalarSpec("N", int, lambda p: p.total_elements),
+        ScalarSpec("op_type", int, lambda p: p.final_op_type),
+    ],
+    torch_kernel=torch_kernel,
+)
+
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Gelu kernel test (new framework)")
+    parser.add_argument(
+        "--compile-only",
+        action="store_true",
+        help="Only compile the kernel without running tests",
+    )
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Disable performance testing"
+    )
+    parser.add_argument(
+        "--backend",
+        choices=["cuda", "triton"],
+        default="cuda",
+        help="Backend to test (default: cuda)",
+    )
+    parser.add_argument(
+        "--variants",
+        choices=["yaml", "none"],
+        default="none",
+        help='Test variants: "yaml" to load from cases.yaml, "none" for single test',
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print individual variant results in suite mode",
+    )
+    return parser.parse_args()
+
+
+def main():
+    """Main test entry point."""
+    args = parse_args()
+
+    # Create test configuration
+    config = TestConfig(
+        enable_perf=True, # not args.no_perf
+        compile_only=args.compile_only,
+        verbose=True,
+        perf_warmup=100,
+        perf_iterations=1000,
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+    # Create backend
+    if args.backend == "cuda":
+        backend = CUDABackend()
+    else:  # triton
+        backend = TritonBackend()
+
+    # Variant mode: run all variants from cases.yaml
+    if args.variants == "yaml":
+        suite = create_suite(
+            params_class=GeluParams,
+            testcase=testcase,
+            testcase_dir=TESTCASE_DIR,
+            backend=backend,
+            variant_source="yaml",
+        )
+        print(f"\n{'=' * 80}")
+        print(f"Testing Gelu operator with {backend.name} backend (variant mode)")
+        print(f"{'=' * 80}\n")
+
+        result = suite.run()
+        print_suite_summary(result, verbose=True)
+        return result.exit_code
+
+    # Single test mode: test with default parameters
+    params = GeluParams()
+
+    print(f"\n{'=' * 80}")
+    print(f"Testing Gelu operator with {backend.name} backend (single test mode)")
+    print(f"Shape: {params.shape}, Elements: {params.total_elements:,}")
+    print(f"Dtype: {params.dtype}, Op Level: {params.op_levels} -> Kernel OpType: {params.final_op_type}")
+    print(f"{'=' * 80}\n")
+
+    result = run_test(
+        testcase_dir=TESTCASE_DIR,
+        testcase=testcase,
+        backend=backend,
+        params=params,
+        config=config,
+    )
+
+    # Print results
+    if not args.compile_only:
+        print_result(result)
+
+    return 0 if result.passed or result.skipped else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+## File: torch_/ref.py
+```py
+import torch
+
+
+def torch_kernel(x: torch.Tensor) -> torch.Tensor:
+    return torch.nn.functional.gelu(x, approximate='tanh')
+
+```
+
+## File: cases.yaml
+```yaml
+# operators/activation/sigmoid/cases.yaml
+dtypes:
+  - float32
+  - float16
+
+shapes:
+  # 1024x1024 的四种优化等级
+  - shape: [1024, 1024]
+    op_levels: 0 # 基础 (Scalar)
+  - shape: [1024, 1024]
+    op_levels: 1 # 向量化 (F32x4 / F16x2)
+  - shape: [1024, 1024]
+    op_levels: 2 # 向量化 (F32x4 / F16x8 Unpack)
+  - shape: [1024, 1024]
+    op_levels: 3 # 向量化 (F32x4 / F16x8 Pack)
+
+  # 4096 (1D) 测试
+  - shape: [4096]
+    op_levels: 0
+  - shape: [4096]
+    op_levels: 1
+  - shape: [4096]
+    op_levels: 2
+  - shape: [4096]
+    op_levels: 3
+    
+  # 2048x2048
+  - shape: [2048, 2048]
+    op_levels: 0
+  - shape: [2048, 2048]
+    op_levels: 1
+  - shape: [2048, 2048]
+    op_levels: 2
+  - shape: [2048, 2048]
+    op_levels: 3
+
+```
+
+## File: get_data.py
+```py
+import torch
+import ctypes
+from dataclasses import dataclass
+from optest.tools.builder import SEED
+
+
+@dataclass
+class Params:
+    """GELU operation parameters"""
+
+    shape: tuple = (12, 3, 128)
+    total_elements: int = 4608  # 12 * 3 * 128
+
+
+def get_cuda_argtypes():
+    return [
+        ctypes.c_void_p,  # input (GPU pointer)
+        ctypes.c_void_p,  # output (GPU pointer)
+        ctypes.c_int,  # total_elements
+    ]
+
+
+def get_cuda_torch_inputs(params: Params):
+    torch.manual_seed(SEED)
+    input_tensor = torch.randn(
+        params.shape, dtype=torch.float32, device="cuda"
+    ).normal_(mean=0.0, std=0.5)
+    output_tensor = torch.empty_like(input_tensor)
+
+    cuda_output_tensors = [output_tensor]
+
+    cuda_all_inputs = [input_tensor, output_tensor, params.total_elements]
+    torch_all_inputs = [input_tensor]
+    return cuda_all_inputs, torch_all_inputs, cuda_output_tensors
+
+
+def cuda_output_tensor_transform(cuda_output):
+    return cuda_output  # No transformation needed for GELU
+
+```
+
+## File: check_cuda.py
+```py
+import os
+import sys
+import argparse
+from get_data import get_cuda_torch_inputs, Params, get_cuda_argtypes  # type: ignore
+
+try:
+    from get_data import cuda_output_tensor_transform  # type: ignore
+except ImportError:
+    cuda_output_tensor_transform = lambda x: x
+
+from torch_.ref import torch_kernel  # type: ignore
+from optest.tools.checker import check_cuda_vs_torch
+
+TESTCASE_ROOT_DIR = os.path.dirname(__file__)
+
+sys.path.insert(0, TESTCASE_ROOT_DIR)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="CUDA kernel test")
+    parser.add_argument(
+        "--compile-only",
+        action="store_true",
+        help="Only compile the CUDA kernel without running tests (default: False)",
+    )
+    parser.add_argument(
+        "--no-perf",
+        action="store_true",
+        help="Disable performance testing (default: False, performance testing enabled)",
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    enable_perf = not args.no_perf  # Default is True, disable with --no-perf
+    compile_only = args.compile_only  # Default is False
+    params = Params()
+
+    check_cuda_vs_torch(
+        testcase_root_dir=TESTCASE_ROOT_DIR,
+        get_cuda_torch_inputs=get_cuda_torch_inputs,
+        params=params,
+        torch_kernel=torch_kernel,
+        get_cuda_argtypes=get_cuda_argtypes,
+        output_tensor_transform=cuda_output_tensor_transform,
+        enable_perf=enable_perf,
+        compile_only=compile_only,
+    )
+
+```
+
+## File: check_triton.py
+```py
+import os
+import sys
+import argparse
+from get_data import get_cuda_torch_inputs, Params, cuda_output_tensor_transform  # type: ignore
+from torch_.ref import torch_kernel  # type: ignore
+from triton_.kernel import triton_kernel  # type: ignore
+from optest.tools.checker import check_triton_vs_torch
+
+TESTCASE_ROOT_DIR = os.path.dirname(__file__)
+
+sys.path.insert(0, TESTCASE_ROOT_DIR)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Triton kernel test")
+    parser.add_argument(
+        "--no-perf",
+        action="store_true",
+        help="Disable performance testing (default: False, performance testing enabled)",
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    enable_perf = not args.no_perf  # Default is True, disable with --no-perf
+    params = Params()
+    check_triton_vs_torch(
+        get_cuda_torch_inputs,
+        params,
+        torch_kernel,
+        triton_kernel,
+        cuda_output_tensor_transform,
+        enable_perf=enable_perf,
+    )
+
+```

@@ -1,0 +1,7 @@
+
+================================================================================
+Testing BatchNorm operator with CUDA backend (single test mode)
+Shape: (16, 3, 32, 32), Channels: 3
+================================================================================
+
+✅ CUDA kernel is up to date

@@ -1,0 +1,59 @@
+{
+  "operator": "cvcuda/adaptive_threshold",
+  "operator_key": "cvcuda__adaptive_threshold",
+  "status": "passed",
+  "rounds_attempted": 3,
+  "agent_steps_per_round": [
+    18,
+    11,
+    16
+  ],
+  "agent_steps_total": 45,
+  "tokens": {
+    "prompt_tokens": 651473,
+    "completion_tokens": 15323,
+    "total_tokens": 666796,
+    "rounds": [
+      {
+        "prompt_tokens": 231177,
+        "completion_tokens": 6106,
+        "total_tokens": 237283
+      },
+      {
+        "prompt_tokens": 147729,
+        "completion_tokens": 3115,
+        "total_tokens": 150844
+      },
+      {
+        "prompt_tokens": 272567,
+        "completion_tokens": 6102,
+        "total_tokens": 278669
+      }
+    ]
+  },
+  "compile_only": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/rounds/round_2/compile.log"
+  },
+  "verify": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/rounds/round_2/verify.log"
+  },
+  "perf": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/rounds/round_2/perf.log"
+  },
+  "variants": {
+    "executed": true,
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/rounds/round_2/variants.log"
+  },
+  "final_kernel": "artifact/cuda_/kernel.cu",
+  "errors": [
+    "round 0 failed: compile=1, verify=1, perf=1, variants=False",
+    "round 1 failed: compile=1, verify=1, perf=1, variants=False"
+  ],
+  "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/cvcuda/adaptive_threshold",
+  "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/artifact",
+  "supports_variants": true
+}

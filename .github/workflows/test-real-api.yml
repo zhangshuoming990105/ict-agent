@@ -1,0 +1,76 @@
+# Real API 测试：需配置 API Key。仅当 commit message 含 [real-api] 或手动 Run workflow 时才跑，省成本。
+# 触发示例：git commit -m "feat: xxx [real-api]" && git push
+# 配置：Settings → Secrets and variables → Actions 添加 KSYUN_API_KEY 或 INFINI_API_KEY。
+# 详见 docs/testing.md
+name: Tests (Real API)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-real-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check if commit message triggers real API test
+        id: check-commit
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run_real_api=true" >> $GITHUB_OUTPUT
+            echo "Manual trigger, running real API tests."
+          elif echo "${{ github.event.head_commit.message }}" | grep -qi '\[real-api\]'; then
+            echo "run_real_api=true" >> $GITHUB_OUTPUT
+            echo "Commit message contains [real-api], running real API tests."
+          else
+            echo "run_real_api=false" >> $GITHUB_OUTPUT
+            echo "Commit message has no [real-api], skipping."
+          fi
+
+      - name: Set up Python
+        if: steps.check-commit.outputs.run_real_api == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv and cache deps
+        if: steps.check-commit.outputs.run_real_api == 'true'
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install system dependencies
+        if: steps.check-commit.outputs.run_real_api == 'true'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
+
+      - name: Install dependencies
+        if: steps.check-commit.outputs.run_real_api == 'true'
+        run: uv pip install -e ".[dev]"
+        env:
+          UV_SYSTEM_PYTHON: 1
+
+      - name: Check API key (skip if none)
+        if: steps.check-commit.outputs.run_real_api == 'true'
+        id: check-key
+        run: |
+          if [ -n "$KSYUN_API_KEY" ] || [ -n "$INFINI_API_KEY" ]; then
+            echo "run_tests=true" >> $GITHUB_OUTPUT
+          else
+            echo "run_tests=false" >> $GITHUB_OUTPUT
+            echo "No KSYUN_API_KEY or INFINI_API_KEY, skipping real API tests."
+          fi
+        env:
+          KSYUN_API_KEY: ${{ secrets.KSYUN_API_KEY }}
+          INFINI_API_KEY: ${{ secrets.INFINI_API_KEY }}
+
+      - name: Run real API tests
+        if: steps.check-key.outputs.run_tests == 'true'
+        run: python -m pytest tests/integration_real_api/ -v --tb=short
+        env:
+          ICT_AGENT_RUN_REAL_API: "1"
+          KSYUN_API_KEY: ${{ secrets.KSYUN_API_KEY }}
+          INFINI_API_KEY: ${{ secrets.INFINI_API_KEY }}
+        timeout-minutes: 15

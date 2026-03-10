@@ -1,0 +1,17 @@
+# operators/vision/nms/cases.yaml
+dtypes:
+  - float32
+
+shapes:
+  # Standard benchmarks
+  - num_boxes: 1024
+    iou_threshold: 0.5
+  
+  - num_boxes: 2048
+    iou_threshold: 0.5
+
+  - num_boxes: 4096
+    iou_threshold: 0.5
+    
+  - num_boxes: 8192
+    iou_threshold: 0.7

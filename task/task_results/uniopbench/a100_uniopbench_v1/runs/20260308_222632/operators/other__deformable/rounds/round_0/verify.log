@@ -1,0 +1,34 @@
+
+================================================================================
+Testing Deformable Attention operator with CUDA backend
+Batch: 1, Queries: 200, Heads: 8
+Embed dim: 512, Levels: 4, Points: 4
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded
+Generating test data...
+Running PyTorch reference...
+Traceback (most recent call last):
+  File "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__deformable/artifact/test.py", line 137, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__deformable/artifact/test.py", line 121, in main
+    result = run_test(
+             ^^^^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/optest/execution/runner.py", line 183, in run_test
+    return runner.run(testcase, params, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/optest/execution/runner.py", line 113, in run
+    output_ref = self.ref_backend.execute(testcase.torch_kernel, ref_inputs)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/optest/core/backend.py", line 47, in execute
+    return kernel(*inputs)
+           ^^^^^^^^^^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__deformable/artifact/torch_/ref.py", line 28, in torch_kernel
+    output = MSDA.ms_deform_attn_forward(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__deformable/artifact/MultiScaleDeformableAttention.py", line 61, in ms_deform_attn_forward
+    raise ValueError(f"Level {level_idx}: size mismatch. Expected {H}*{W}={H*W}, got {level_size}")
+ValueError: Level 0: size mismatch. Expected 36*80=2880, got -3

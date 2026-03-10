@@ -1,0 +1,11 @@
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded
+Traceback (most recent call last):
+  File "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/artifact/test.py", line 221, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/artifact/test.py", line 209, in main
+    mae = result.validation.mean_abs_error if hasattr(result, 'validation') else 1.0
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'mean_abs_error'
