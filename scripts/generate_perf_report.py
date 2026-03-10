@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--python",
-        default="/data/yuqiuchu/miniconda3/envs/ict-agent/bin/python",
+        default=sys.executable,
         help="Python executable used to run each artifact test.",
     )
     parser.add_argument(
