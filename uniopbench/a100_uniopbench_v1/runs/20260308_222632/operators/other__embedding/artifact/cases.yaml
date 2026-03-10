@@ -1,0 +1,21 @@
+# cases.yaml
+dtypes:
+  - float32
+  - float16
+
+shapes:
+  # Shape: [SeqLen, MaxV, EmbSize]
+  
+  - shape: [2048, 1024, 512]
+    op_levels: 0 # Scalar
+  - shape: [2048, 1024, 512]
+    op_levels: 1 # Vectorized (Unpack)
+  - shape: [2048, 1024, 512]
+    op_levels: 2 # Packed (float4)
+
+  - shape: [4096, 4096, 1024]
+    op_levels: 0
+  - shape: [4096, 4096, 1024]
+    op_levels: 1
+  - shape: [4096, 4096, 1024]
+    op_levels: 2

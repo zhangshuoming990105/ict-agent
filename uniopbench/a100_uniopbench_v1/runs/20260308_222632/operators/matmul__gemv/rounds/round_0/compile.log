@@ -1,0 +1,10 @@
+
+================================================================================
+Testing Gemv operator with CUDA backend (single test mode)
+Shape: (1024, 128), Dtype: torch.float32
+Op Level: 2 -> Final OpType: 2
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

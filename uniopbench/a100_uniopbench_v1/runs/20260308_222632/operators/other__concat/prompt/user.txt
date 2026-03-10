@@ -1,0 +1,314 @@
+Operator: other/concat
+Target GPU architecture: sm_80
+Read the workspace files, update cuda_/kernel.cu, and validate your changes with:
+python test.py --compile-only
+python test.py --no-perf
+python test.py
+If variants are supported: python test.py --variants yaml --no-perf
+Work autonomously in this turn. When compile and correctness pass, reply with a short summary.
+
+## File: test.py
+```py
+"""Test script for Concat operator using the new optest framework.
+
+This is the new unified test entry point that replaces check_cuda.py and
+check_triton.py.
+"""
+
+import os
+import sys
+import argparse
+from dataclasses import dataclass
+
+import torch
+from optest import (
+    TestCase,
+    TensorSpec,
+    ScalarSpec,
+    TestConfig,
+    CUDABackend,
+    TritonBackend,
+    run_test,
+    print_result,
+)
+
+from torch_.ref import torch_kernel
+
+# Add parent directory to path for imports
+TESTCASE_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_DIR)
+
+
+@dataclass
+class ConcatParams:
+    """Concat test parameters."""
+
+    input_shape: tuple = (4, 32, 112, 112)
+    output_shape: tuple = (4, 64, 112, 112)
+    N: int = 4
+    C: int = 32
+    H: int = 112
+    W: int = 112
+
+
+# Define test case using new framework
+testcase = TestCase(
+    tensor_specs=[
+        TensorSpec("input1", torch.float32, ("input_shape",), "input"),
+        TensorSpec("input2", torch.float32, ("input_shape",), "input"),
+        TensorSpec("output", torch.float32, ("output_shape",), "output"),
+    ],
+    scalar_specs=[
+        ScalarSpec("N", int, lambda p: p.N),
+        ScalarSpec("C", int, lambda p: p.C),
+        ScalarSpec("H", int, lambda p: p.H),
+        ScalarSpec("W", int, lambda p: p.W),
+    ],
+    torch_kernel=torch_kernel,
+)
+
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Concat kernel test (new framework)")
+    parser.add_argument(
+        "--compile-only",
+        action="store_true",
+        help="Only compile the kernel without running tests",
+    )
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Disable performance testing"
+    )
+    parser.add_argument(
+        "--backend",
+        choices=["cuda", "triton"],
+        default="cuda",
+        help="Backend to test (default: cuda)",
+    )
+    return parser.parse_args()
+
+
+def main():
+    """Main test entry point."""
+    args = parse_args()
+
+    # Create test configuration
+    config = TestConfig(
+        enable_perf=not args.no_perf,
+        compile_only=args.compile_only,
+    )
+
+    # Create backend
+    if args.backend == "cuda":
+        backend = CUDABackend()
+    else:  # triton
+        backend = TritonBackend()
+
+    # Create test parameters
+    params = ConcatParams()
+
+    # Run test
+    print(f"\n{'=' * 80}")
+    print(f"Testing Concat operator with {backend.name} backend")
+    print(f"Input shape: {params.input_shape}, Output shape: {params.output_shape}")
+    print(f"{'=' * 80}\n")
+
+    result = run_test(
+        testcase_dir=TESTCASE_DIR,
+        testcase=testcase,
+        backend=backend,
+        params=params,
+        config=config,
+    )
+
+    # Print results
+    if not args.compile_only:
+        print_result(result)
+
+    return 0 if result.passed or result.skipped else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+```
+
+## File: torch_/ref.py
+```py
+import torch
+
+
+def torch_kernel(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    return torch.cat((a, b), dim=1)
+
+```
+
+## File: cases.yaml
+```yaml
+dtypes:
+- float32
+shapes:
+- - 1
+  - 128
+  - 28
+  - 28
+- - 1
+  - 256
+  - 14
+  - 14
+- - 1
+  - 512
+  - 7
+  - 7
+- - 1
+  - 64
+  - 112
+  - 56
+- - 1
+  - 64
+  - 56
+  - 112
+- - 1
+  - 64
+  - 56
+  - 56
+- - 4
+  - 32
+  - 112
+  - 112
+- - 8
+  - 768
+  - 1
+  - 1
+
+```
+
+## File: get_data.py
+```py
+import torch
+import ctypes
+from dataclasses import dataclass
+from optest.tools.checker import SEED
+
+
+@dataclass
+class Params:
+    input_shape: tuple = (4, 32, 112, 112)
+    output_shape: tuple = (4, 64, 112, 112)
+    N: int = 4
+    C: int = 32
+    H: int = 112
+    W: int = 112
+
+
+def get_cuda_argtypes():
+    return [
+        ctypes.c_void_p,  # input1
+        ctypes.c_void_p,  # input2
+        ctypes.c_void_p,  # output
+        ctypes.c_int,  # N
+        ctypes.c_int,  # C
+        ctypes.c_int,  # H
+        ctypes.c_int,  # W
+    ]
+
+
+def get_cuda_torch_inputs(params: Params):
+    torch.manual_seed(SEED)
+    a = torch.randn(params.input_shape, dtype=torch.float32, device="cuda")
+    b = torch.randn(params.input_shape, dtype=torch.float32, device="cuda")
+    output = torch.empty(params.output_shape, dtype=torch.float32, device="cuda")
+    cuda_all_inputs = [a, b, output, params.N, params.C, params.H, params.W]
+    torch_all_inputs = [a, b]
+    return cuda_all_inputs, torch_all_inputs, [output]
+
+
+def cuda_output_tensor_transform(tensor):
+    return tensor
+
+```
+
+## File: check_cuda.py
+```py
+import os
+import sys
+import argparse
+from get_data import (
+    get_cuda_torch_inputs,
+    Params,
+    get_cuda_argtypes,
+    cuda_output_tensor_transform,
+)
+from torch_.ref import torch_kernel
+from optest.tools.checker import check_cuda_vs_torch
+
+TESTCASE_ROOT_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_ROOT_DIR)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="concat_4_32_112_112 CUDA kernel test")
+    parser.add_argument(
+        "--compile-only",
+        action="store_true",
+        help="Only compile the CUDA kernel without running correctness checks",
+    )
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Disable performance benchmarking"
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    params = Params()
+    check_cuda_vs_torch(
+        testcase_root_dir=TESTCASE_ROOT_DIR,
+        get_cuda_torch_inputs=get_cuda_torch_inputs,
+        params=params,
+        torch_kernel=torch_kernel,
+        get_cuda_argtypes=get_cuda_argtypes,
+        output_tensor_transform=cuda_output_tensor_transform,
+        enable_perf=not args.no_perf,
+        compile_only=args.compile_only,
+    )
+
+```
+
+## File: check_triton.py
+```py
+import os
+import sys
+import argparse
+from get_data import get_cuda_torch_inputs, Params, cuda_output_tensor_transform
+from torch_.ref import torch_kernel
+from triton_.kernel import triton_kernel
+from optest.tools.checker import compare_results
+
+TESTCASE_ROOT_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_ROOT_DIR)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="concat_4_32_112_112 Triton kernel test"
+    )
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Placeholder flag for compatibility"
+    )
+    return parser.parse_args()
+
+
+def main():
+    params = Params()
+    _, torch_inputs, _ = get_cuda_torch_inputs(params)
+    torch_output = cuda_output_tensor_transform(torch_kernel(*torch_inputs))
+    triton_output = cuda_output_tensor_transform(triton_kernel(*torch_inputs))
+    compare_results(torch_output, triton_output, test_type=["PyTorch", "Triton"])
+
+
+if __name__ == "__main__":
+    parse_args()
+    main()
+
+```

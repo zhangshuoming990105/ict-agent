@@ -1,0 +1,44 @@
+{
+  "operator": "other/gatemlp",
+  "operator_key": "other__gatemlp",
+  "status": "passed",
+  "rounds_attempted": 1,
+  "agent_steps_per_round": [
+    10
+  ],
+  "agent_steps_total": 10,
+  "tokens": {
+    "prompt_tokens": 87065,
+    "completion_tokens": 2644,
+    "total_tokens": 89709,
+    "rounds": [
+      {
+        "prompt_tokens": 87065,
+        "completion_tokens": 2644,
+        "total_tokens": 89709
+      }
+    ]
+  },
+  "compile_only": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gatemlp/rounds/round_0/compile.log"
+  },
+  "verify": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gatemlp/rounds/round_0/verify.log"
+  },
+  "perf": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gatemlp/rounds/round_0/perf.log"
+  },
+  "variants": {
+    "executed": false,
+    "passed": null,
+    "log": ""
+  },
+  "final_kernel": "artifact/cuda_/kernel.cu",
+  "errors": [],
+  "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/other/gatemlp",
+  "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gatemlp/artifact",
+  "supports_variants": false
+}

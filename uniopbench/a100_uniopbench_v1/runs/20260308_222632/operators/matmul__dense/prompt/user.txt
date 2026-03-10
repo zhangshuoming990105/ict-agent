@@ -1,0 +1,303 @@
+Operator: matmul/dense
+Target GPU architecture: sm_80
+Read the workspace files, update cuda_/kernel.cu, and validate your changes with:
+python test.py --compile-only
+python test.py --no-perf
+python test.py
+If variants are supported: python test.py --variants yaml --no-perf
+Work autonomously in this turn. When compile and correctness pass, reply with a short summary.
+
+## File: test.py
+```py
+"""Test script for Dense operator using the new optest framework.
+
+This is the new unified test entry point that replaces check_cuda.py and
+check_triton.py.
+"""
+
+import os
+import sys
+import argparse
+from dataclasses import dataclass
+
+import torch
+from optest import (
+    TestCase,
+    TensorSpec,
+    ScalarSpec,
+    TestConfig,
+    CUDABackend,
+    TritonBackend,
+    run_test,
+    print_result,
+)
+
+from torch_.ref import torch_kernel
+
+# Add parent directory to path for imports
+TESTCASE_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_DIR)
+
+
+@dataclass
+class DenseParams:
+    """Dense test parameters."""
+
+    m: int = 64
+    k: int = 768
+    n: int = 768
+
+
+# Define test case using new framework
+testcase = TestCase(
+    tensor_specs=[
+        TensorSpec("a", torch.float16, ("m", "k"), "input"),
+        TensorSpec("b", torch.float16, ("k", "n"), "input"),
+        TensorSpec("bias", torch.float32, ("n",), "input"),
+        TensorSpec("output", torch.float32, ("m", "n"), "output"),
+    ],
+    scalar_specs=[
+        ScalarSpec("M", int, lambda p: p.m),
+        ScalarSpec("K", int, lambda p: p.k),
+        ScalarSpec("N", int, lambda p: p.n),
+    ],
+    torch_kernel=torch_kernel,
+)
+
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Dense kernel test (new framework)")
+    parser.add_argument(
+        "--compile-only",
+        action="store_true",
+        help="Only compile the kernel without running tests",
+    )
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Disable performance testing"
+    )
+    parser.add_argument(
+        "--backend",
+        choices=["cuda", "triton"],
+        default="cuda",
+        help="Backend to test (default: cuda)",
+    )
+    return parser.parse_args()
+
+
+def main():
+    """Main test entry point."""
+    args = parse_args()
+
+    # Create test configuration
+    config = TestConfig(
+        enable_perf=not args.no_perf,
+        compile_only=args.compile_only,
+    )
+
+    # Create backend
+    if args.backend == "cuda":
+        backend = CUDABackend()
+    else:  # triton
+        backend = TritonBackend()
+
+    # Create test parameters
+    params = DenseParams()
+
+    # Run test
+    print(f"\n{'=' * 80}")
+    print(f"Testing Dense operator with {backend.name} backend")
+    print(
+        f"a: ({params.m}, {params.k}), b: ({params.k}, {params.n}), "
+        f"bias: ({params.n},), output: ({params.m}, {params.n})"
+    )
+    print(f"{'=' * 80}\n")
+
+    result = run_test(
+        testcase_dir=TESTCASE_DIR,
+        testcase=testcase,
+        backend=backend,
+        params=params,
+        config=config,
+    )
+
+    # Print results
+    if not args.compile_only:
+        print_result(result)
+
+    return 0 if result.passed or result.skipped else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+```
+
+## File: torch_/ref.py
+```py
+import torch
+
+
+def torch_kernel(a: torch.Tensor, b: torch.Tensor, bias: torch.Tensor) -> torch.Tensor:
+    result = torch.matmul(a.float(), b.float())
+    return result + bias
+
+```
+
+## File: cases.yaml
+```yaml
+dtypes:
+- float16
+shapes:
+- batch: 16
+  in_features: 1024
+  out_features: 1024
+- batch: 16
+  in_features: 128
+  out_features: 128
+- batch: 16
+  in_features: 256
+  out_features: 256
+- batch: 16
+  in_features: 512
+  out_features: 512
+- batch: 16
+  in_features: 64
+  out_features: 64
+- batch: 32
+  in_features: 512
+  out_features: 512
+- batch: 64
+  in_features: 768
+  out_features: 768
+- batch: 80
+  in_features: 1024
+  out_features: 1024
+
+```
+
+## File: get_data.py
+```py
+import torch
+import ctypes
+from dataclasses import dataclass
+from optest.tools.checker import SEED
+
+
+@dataclass
+class Params:
+    m: int = 64
+    k: int = 768
+    n: int = 768
+
+
+def get_cuda_argtypes():
+    return [
+        ctypes.c_void_p,  # A
+        ctypes.c_void_p,  # B
+        ctypes.c_void_p,  # bias
+        ctypes.c_void_p,  # output
+        ctypes.c_int,  # M
+        ctypes.c_int,  # K
+        ctypes.c_int,  # N
+    ]
+
+
+def get_cuda_torch_inputs(params: Params):
+    torch.manual_seed(SEED)
+    a = torch.randn((params.m, params.k), dtype=torch.float16, device="cuda")
+    b = torch.randn((params.k, params.n), dtype=torch.float16, device="cuda")
+    bias = torch.randn((params.n,), dtype=torch.float32, device="cuda")
+    output = torch.empty((params.m, params.n), dtype=torch.float32, device="cuda")
+    cuda_all_inputs = [a, b, bias, output, params.m, params.k, params.n]
+    torch_all_inputs = [a, b, bias]
+    return cuda_all_inputs, torch_all_inputs, [output]
+
+
+def cuda_output_tensor_transform(tensor):
+    return tensor
+
+```
+
+## File: check_cuda.py
+```py
+import os
+import sys
+import argparse
+from get_data import (
+    get_cuda_torch_inputs,
+    Params,
+    get_cuda_argtypes,
+    cuda_output_tensor_transform,
+)
+from torch_.ref import torch_kernel
+from optest.tools.checker import check_cuda_vs_torch
+
+TESTCASE_ROOT_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_ROOT_DIR)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="dense_64_768_768 CUDA kernel test")
+    parser.add_argument(
+        "--compile-only",
+        action="store_true",
+        help="Only compile the CUDA kernel without running correctness checks",
+    )
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Disable performance benchmarking"
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    params = Params()
+    check_cuda_vs_torch(
+        testcase_root_dir=TESTCASE_ROOT_DIR,
+        get_cuda_torch_inputs=get_cuda_torch_inputs,
+        params=params,
+        torch_kernel=torch_kernel,
+        get_cuda_argtypes=get_cuda_argtypes,
+        output_tensor_transform=cuda_output_tensor_transform,
+        enable_perf=not args.no_perf,
+        compile_only=args.compile_only,
+    )
+
+```
+
+## File: check_triton.py
+```py
+import os
+import sys
+import argparse
+from get_data import get_cuda_torch_inputs, Params, cuda_output_tensor_transform
+from torch_.ref import torch_kernel
+from triton_.kernel import triton_kernel
+from optest.tools.checker import compare_results
+
+TESTCASE_ROOT_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_ROOT_DIR)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="dense_64_768_768 Triton kernel test")
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Placeholder flag for compatibility"
+    )
+    return parser.parse_args()
+
+
+def main():
+    params = Params()
+    _, torch_inputs, _ = get_cuda_torch_inputs(params)
+    torch_output = cuda_output_tensor_transform(torch_kernel(*torch_inputs))
+    triton_output = cuda_output_tensor_transform(triton_kernel(*torch_inputs))
+    compare_results(torch_output, triton_output, test_type=["PyTorch", "Triton"])
+
+
+if __name__ == "__main__":
+    parse_args()
+    main()
+
+```

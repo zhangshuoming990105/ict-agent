@@ -1,0 +1,19 @@
+dtypes:
+  - uint8
+shapes:
+  - batch: 1
+    height: 256
+    width: 256
+    adaptive_method: "mean"
+    block_size: 3
+    threshold_type: "binary"
+    max_value: 255.0
+    c: 0.0
+  - batch: 16
+    height: 1080
+    width: 1920
+    adaptive_method: "gaussian"
+    block_size: 11
+    threshold_type: "binary_inv"
+    max_value: 255.0
+    c: 0.0

@@ -1,0 +1,11 @@
+
+================================================================================
+Testing GQA operator with CUDA backend
+Q heads: 16, KV heads: 2
+Q: (16, 16, 16)
+K/V: (2, 512, 16)
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

@@ -1,0 +1,558 @@
+Operator: cvcuda/adaptive_threshold
+Target GPU architecture: sm_80
+Read the workspace files, update cuda_/kernel.cu, and validate your changes with:
+python test.py --compile-only
+python test.py --no-perf
+python test.py
+If variants are supported: python test.py --variants yaml --no-perf
+Work autonomously in this turn. When compile and correctness pass, reply with a short summary.
+
+## File: test.py
+```py
+import os
+import sys
+import argparse
+from dataclasses import dataclass
+
+import torch
+from optest import (
+    TestCase,
+    TensorSpec,
+    ScalarSpec,
+    TestConfig,
+    CUDABackend,
+    TritonBackend,
+    run_test,
+    print_result,
+    create_suite,
+    print_suite_summary,
+)
+
+from torch_.ref import torch_kernel
+
+TESTCASE_DIR = os.path.dirname(__file__)
+sys.path.insert(0, TESTCASE_DIR)
+
+from typing import Any 
+
+@dataclass
+class AdaptiveParams:
+    dtype: Any = torch.uint8
+    batch: int = 16
+    height: int = 1080
+    width: int = 1920
+    adaptive_method: str = "gaussian"
+    block_size: int = 11
+    threshold_type: str = "binary_inv"
+    max_value: float = 255.0
+    c: float = 0.0
+
+    def __post_init__(self):
+        if isinstance(self.dtype, str):
+            self.dtype = getattr(torch, self.dtype)
+
+    @property
+    def k_area(self):
+        return self.block_size * self.block_size
+
+testcase = TestCase(
+    tensor_specs=[
+        TensorSpec("src", "dtype", ("batch", "height", "width"), "input"),
+        TensorSpec("temp_kernel", torch.float32, ("k_area",), "input"),
+        TensorSpec("temp_sum", torch.float32, (1,), "input"), 
+        TensorSpec("dst", "dtype", ("batch", "height", "width"), "output"),
+    ],
+    scalar_specs=[
+        ScalarSpec("N", int, lambda p: p.batch),
+        ScalarSpec("H", int, lambda p: p.height),
+        ScalarSpec("W", int, lambda p: p.width),
+        ScalarSpec("adaptive_method", int, lambda p: 0 if p.adaptive_method == "mean" else 1),
+        ScalarSpec("threshold_type", int, lambda p: 0 if p.threshold_type == "binary" else 1),
+        ScalarSpec("block_size", int, lambda p: p.block_size),
+        ScalarSpec("max_value", float, lambda p: p.max_value),
+        ScalarSpec("c", float, lambda p: p.c),
+    ],
+    torch_kernel=torch_kernel,
+)
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Adaptive kernel test (new framework)")
+    parser.add_argument(
+        "--compile-only",
+        action="store_true",
+        help="Only compile the kernel without running tests",
+    )
+    parser.add_argument(
+        "--no-perf", action="store_true", help="Disable performance testing"
+    )
+    parser.add_argument(
+        "--backend",
+        choices=["cuda", "triton"],
+        default="cuda",
+        help="Backend to test (default: cuda)",
+    )
+    parser.add_argument(
+        "--variants",
+        choices=["yaml", "none"],
+        default="none",
+        help='Test variants: "yaml" to load from cases.yaml, "none" for single test',
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print individual variant results in suite mode",
+    )
+    return parser.parse_args()
+
+
+def fix_result(result):
+    # 提取 MAE
+    mae = 1.0
+    if hasattr(result, "validation") and result.validation is not None:
+        mae = result.validation.mean_abs_error
+    elif hasattr(result, "metrics"):
+        mae = result.metrics.get("Mean_Abs_Err", 1.0)
+
+    # 只要平均绝对误差极低，强制设为 True
+    if mae < 1e-3:
+        result.passed = True
+        if hasattr(result, "validation") and result.validation is not None:
+            result.validation.passed = True
+    return result.passed
+
+def main():
+    args = parse_args()
+
+    config = TestConfig(
+        enable_perf=True,
+        compile_only=args.compile_only,
+        verbose=True,
+        perf_warmup=100,
+        perf_iterations=1000,
+        atol=1e-3, 
+        rtol=1e-3,
+    )
+
+    if args.backend == "cuda":
+        backend = CUDABackend()
+    else:
+        backend = TritonBackend()
+
+    # 因为错几个像素就会导致 Max_Abs_Err 不符合容差，改大容差又跑不了，
+    # 所以下面的添加都是为了在能接受的误差内使其 pass
+
+    # --- 1. YAML 变体模式 ---
+    if args.variants == "yaml":
+        suite = create_suite(
+            params_class=AdaptiveParams,
+            testcase=testcase,
+            testcase_dir=TESTCASE_DIR,
+            backend=backend,
+            variant_source="yaml",
+        )
+        
+        suite_result = suite.run()
+
+        def recursive_fix(obj):
+            if hasattr(obj, 'passed') and (hasattr(obj, 'metrics') or hasattr(obj, 'validation')):
+                mae = 1.0
+                if hasattr(obj, 'validation') and obj.validation is not None:
+                    mae = obj.validation.mean_abs_error
+                elif hasattr(obj, 'metrics'):
+                    mae = obj.metrics.get("Mean_Abs_Err", 1.0)
+                
+                if mae < 1e-3:
+                    obj.passed = True
+                    if hasattr(obj, 'validation') and obj.validation is not None:
+                        obj.validation.passed = True
+            
+            if isinstance(obj, dict):
+                for v in obj.values(): recursive_fix(v)
+            elif isinstance(obj, (list, tuple)):
+                for v in obj: recursive_fix(v)
+            elif hasattr(obj, '__dict__'):
+                for v in obj.__dict__.values():
+                    if not isinstance(v, (str, int, float, bool, type(None))):
+                        recursive_fix(v)
+
+        recursive_fix(suite_result)
+
+        all_results = []
+        def collect_results(obj):
+            if hasattr(obj, 'passed') and (hasattr(obj, 'metrics') or hasattr(obj, 'validation')):
+                all_results.append(obj)
+            if isinstance(obj, dict):
+                for v in obj.values(): collect_results(v)
+            elif isinstance(obj, (list, tuple)):
+                for v in obj: collect_results(v)
+            elif hasattr(obj, '__dict__'):
+                for v in obj.__dict__.values():
+                    if not isinstance(v, (str, int, float, bool, type(None))):
+                        collect_results(v)
+
+        collect_results(suite_result)
+        
+        if all_results:
+            passed_count = sum(1 for r in all_results if r.passed)
+            failed_count = len(all_results) - passed_count
+            
+            for attr in ['passed_count', 'passed', '_passed_count']:
+                if hasattr(suite_result, attr): setattr(suite_result, attr, passed_count)
+            for attr in ['failed_count', 'failed', '_failed_count']:
+                if hasattr(suite_result, attr): setattr(suite_result, attr, failed_count)
+            
+        print_suite_summary(suite_result, verbose=True)
+        
+        return 0
+
+    # --- 2. 单测模式 ---
+    params = AdaptiveParams()
+    result = run_test(
+        testcase_dir=TESTCASE_DIR,
+        testcase=testcase,
+        backend=backend,
+        params=params,
+        config=config,
+    )
+
+    mae = result.validation.mean_abs_error if hasattr(result, 'validation') else 1.0
+    if mae < 1e-3:
+        result.passed = True
+        if hasattr(result, 'validation'):
+            result.validation.passed = True
+
+    if not args.compile_only:
+        print_result(result)
+
+    return 0 if result.passed or result.skipped else 1
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+## File: torch_/ref.py
+```py
+import torch
+import torch.nn.functional as F
+import math
+
+
+def build_mean_kernel(K, device):
+    val = 1.0 / float(K * K)
+    kernel = torch.full(
+        (1, 1, K, K),
+        val,
+        dtype=torch.float32,
+        device=device,
+    )
+    return kernel
+
+
+def build_gaussian_kernel(K, device):
+    sigma = 0.3 * ((K - 1) * 0.5 - 1.0) + 0.8
+    kernel = torch.empty(K * K, dtype=torch.float32, device=device)
+    cx = (K - 1) * 0.5
+    sum_val = 0.0
+
+    for idx in range(K * K):
+
+        x = idx % K
+        y = idx // K
+
+        dx = x - cx
+        dy = y - cx
+
+        w = math.exp(-(dx * dx / (2 * sigma * sigma) +
+                       dy * dy / (2 * sigma * sigma)))
+
+        kernel[idx] = w
+        sum_val += w
+
+    kernel /= sum_val
+    return kernel.view(1, 1, K, K)
+
+
+def torch_kernel(
+    src,
+    temp_kernel,
+    temp_sum,
+    N,
+    H,
+    W,
+    adaptive_method,
+    threshold_type,
+    block_size,
+    max_value,
+    c,
+):
+
+    device = src.device
+    x = src.to(torch.float32).unsqueeze(1)
+    pad = block_size // 2
+    x = F.pad(x, (pad, pad, pad, pad), mode="replicate")
+
+    if adaptive_method == 0:
+        weight = build_mean_kernel(block_size, device)
+    else:
+        weight = build_gaussian_kernel(block_size, device)
+
+    local_mean = F.conv2d(x, weight)
+
+    if threshold_type == 0:
+        idelta = math.ceil(c)
+    else:
+        idelta = math.floor(c)
+
+    sval = src.to(torch.int32).unsqueeze(1) + idelta
+
+    res_i = torch.floor(local_mean + 0.5).to(torch.int32)
+    res_i = torch.clamp(res_i, 0, 255)
+
+
+    if threshold_type == 0:
+        cond = sval > res_i
+    else:
+        cond = sval <= res_i
+
+    maxv = int(round(max_value))
+
+    dst = torch.where(
+        cond,
+        torch.tensor(maxv, dtype=torch.uint8, device=device),
+        torch.tensor(0, dtype=torch.uint8, device=device),
+    )
+
+    return dst.squeeze(1)
+```
+
+## File: cases.yaml
+```yaml
+dtypes:
+  - uint8
+shapes:
+  - batch: 1
+    height: 256
+    width: 256
+    adaptive_method: "mean"
+    block_size: 3
+    threshold_type: "binary"
+    max_value: 255.0
+    c: 0.0
+  - batch: 16
+    height: 1080
+    width: 1920
+    adaptive_method: "gaussian"
+    block_size: 11
+    threshold_type: "binary_inv"
+    max_value: 255.0
+    c: 0.0
+```
+
+## Previous kernel
+```cuda
+#include <cuda_runtime.h>
+#include <cmath>
+#include <cstdint>
+
+// Build Gaussian kernel weights
+__global__ void build_gaussian_kernel_gpu(
+    float* kernel,
+    int K,
+    float* sum_out)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= K * K) return;
+
+    float sigma = 0.3f * ((K - 1) * 0.5f - 1.0f) + 0.8f;
+    float cx = (K - 1) * 0.5f;
+    
+    int x = idx % K;
+    int y = idx / K;
+    
+    float dx = x - cx;
+    float dy = y - cx;
+    
+    float w = expf(-(dx * dx / (2.0f * sigma * sigma) + 
+                     dy * dy / (2.0f * sigma * sigma)));
+    
+    kernel[idx] = w;
+    
+    // Use atomic add for sum
+    atomicAdd(sum_out, w);
+}
+
+__global__ void normalize_kernel_gpu(float* kernel, int K, float sum) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= K * K) return;
+    kernel[idx] /= sum;
+}
+
+__global__ void fill_mean_kernel_gpu(float* kernel, int K, float val) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= K * K) return;
+    kernel[idx] = val;
+}
+
+// Fused kernel: compute local mean and apply threshold in one pass
+__global__ void adaptive_threshold_fused(
+    const uint8_t* src,
+    const float* weight,
+    uint8_t* dst,
+    int N, int H, int W,
+    int K,
+    int threshold_type,
+    float max_value,
+    float c)
+{
+    int n = blockIdx.z;
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (n >= N || row >= H || col >= W) return;
+    
+    int pad = K / 2;
+    float sum = 0.0f;
+    
+    // Compute local weighted mean
+    for (int ky = 0; ky < K; ++ky) {
+        for (int kx = 0; kx < K; ++kx) {
+            int sy = row + ky - pad;
+            int sx = col + kx - pad;
+            
+            // Replicate padding
+            sy = max(0, min(H - 1, sy));
+            sx = max(0, min(W - 1, sx));
+            
+            int src_idx = n * H * W + sy * W + sx;
+            int k_idx = ky * K + kx;
+            
+            sum += (float)src[src_idx] * weight[k_idx];
+        }
+    }
+    
+    // Apply threshold
+    int idelta;
+    if (threshold_type == 0) {
+        idelta = (int)ceilf(c);
+    } else {
+        idelta = (int)floorf(c);
+    }
+    
+    int out_idx = n * H * W + row * W + col;
+    int sval = (int)src[out_idx] + idelta;
+    int res_i = (int)floorf(sum + 0.5f);
+    res_i = max(0, min(255, res_i));
+    
+    bool cond;
+    if (threshold_type == 0) {
+        cond = sval > res_i;
+    } else {
+        cond = sval <= res_i;
+    }
+    
+    int maxv = (int)roundf(max_value);
+    dst[out_idx] = cond ? (uint8_t)maxv : (uint8_t)0;
+}
+
+extern "C" void cuda_kernel(
+    uint8_t* src,
+    float* temp_kernel,
+    float* temp_sum,
+    uint8_t* dst,
+    int N, int H, int W,
+    int adaptive_method,
+    int threshold_type,
+    int block_size,
+    float max_value,
+    float c)
+{
+    int K = block_size;
+    int k_area = K * K;
+    
+    // Step 1: Build kernel weights
+    if (adaptive_method == 0) {
+        // Mean kernel
+        float val = 1.0f / (float)(k_area);
+        
+        int threads = 256;
+        int blocks = (k_area + threads - 1) / threads;
+        
+        fill_mean_kernel_gpu<<<blocks, threads>>>(temp_kernel, K, val);
+        
+    } else {
+        // Gaussian kernel
+        cudaMemset(temp_sum, 0, sizeof(float));
+        
+        int threads = 256;
+        int blocks = (k_area + threads - 1) / threads;
+        
+        build_gaussian_kernel_gpu<<<blocks, threads>>>(
+            temp_kernel, K, temp_sum);
+        
+        cudaDeviceSynchronize();
+        
+        // Read sum back and normalize
+        float h_sum;
+        cudaMemcpy(&h_sum, temp_sum, sizeof(float), cudaMemcpyDeviceToHost);
+        
+        normalize_kernel_gpu<<<blocks, threads>>>(
+            temp_kernel, K, h_sum);
+    }
+    
+    cudaDeviceSynchronize();
+    
+    // Step 2: Fused computation of local mean and thresholding
+    dim3 threads_2d(16, 16);
+    dim3 blocks_2d(
+        (W + threads_2d.x - 1) / threads_2d.x,
+        (H + threads_2d.y - 1) / threads_2d.y,
+        N
+    );
+    
+    adaptive_threshold_fused<<<blocks_2d, threads_2d>>>(
+        src, temp_kernel, dst,
+        N, H, W, K,
+        threshold_type, max_value, c);
+    
+    cudaDeviceSynchronize();
+}
+
+```
+
+## Compile log
+```text
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded
+Traceback (most recent call last):
+  File "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/artifact/test.py", line 221, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/artifact/test.py", line 209, in main
+    mae = result.validation.mean_abs_error if hasattr(result, 'validation') else 1.0
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'mean_abs_error'
+
+```
+
+## Verification log
+```text
+Skipped because compile-only failed.
+
+```
+
+## Performance log
+```text
+Skipped because correctness checks did not pass.
+
+```
+
+## Variants log
+```text
+Skipped because correctness checks did not pass.
+
+```
+
+Revise the kernel to fix the reported failures while keeping the same interface.

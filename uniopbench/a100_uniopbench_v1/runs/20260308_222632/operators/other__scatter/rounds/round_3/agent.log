@@ -1,0 +1,8 @@
+ICT Agent batch turn started.
+Model:        mcs-1
+Workspace:    /data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__scatter/artifact
+Context:      128,000 tokens
+Max steps:    unlimited
+
+Error: Error code: 403 - {'error': {'type': 'Forbidden', 'message': 'consumer is disabled'}, 'type': 'error'}
+

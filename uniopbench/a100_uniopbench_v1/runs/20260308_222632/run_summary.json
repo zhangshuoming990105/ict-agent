@@ -1,0 +1,2174 @@
+{
+  "operators": {
+    "activation__elu": {
+      "operator": "activation/elu",
+      "operator_key": "activation__elu",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        16
+      ],
+      "agent_steps_total": 16,
+      "tokens": {
+        "prompt_tokens": 203599,
+        "completion_tokens": 9668,
+        "total_tokens": 213267,
+        "rounds": [
+          {
+            "prompt_tokens": 203599,
+            "completion_tokens": 9668,
+            "total_tokens": 213267
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__elu/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__elu/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__elu/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__elu/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/activation/elu",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__elu/artifact",
+      "supports_variants": true
+    },
+    "activation__gelu": {
+      "operator": "activation/gelu",
+      "operator_key": "activation__gelu",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        19
+      ],
+      "agent_steps_total": 19,
+      "tokens": {
+        "prompt_tokens": 243492,
+        "completion_tokens": 7818,
+        "total_tokens": 251310,
+        "rounds": [
+          {
+            "prompt_tokens": 243492,
+            "completion_tokens": 7818,
+            "total_tokens": 251310
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__gelu/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__gelu/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__gelu/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__gelu/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/activation/gelu",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__gelu/artifact",
+      "supports_variants": true
+    },
+    "activation__hardshrink": {
+      "operator": "activation/hardshrink",
+      "operator_key": "activation__hardshrink",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        19
+      ],
+      "agent_steps_total": 19,
+      "tokens": {
+        "prompt_tokens": 230831,
+        "completion_tokens": 6259,
+        "total_tokens": 237090,
+        "rounds": [
+          {
+            "prompt_tokens": 230831,
+            "completion_tokens": 6259,
+            "total_tokens": 237090
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardshrink/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardshrink/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardshrink/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardshrink/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/activation/hardshrink",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardshrink/artifact",
+      "supports_variants": true
+    },
+    "activation__hardswish": {
+      "operator": "activation/hardswish",
+      "operator_key": "activation__hardswish",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        15
+      ],
+      "agent_steps_total": 15,
+      "tokens": {
+        "prompt_tokens": 182642,
+        "completion_tokens": 6524,
+        "total_tokens": 189166,
+        "rounds": [
+          {
+            "prompt_tokens": 182642,
+            "completion_tokens": 6524,
+            "total_tokens": 189166
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardswish/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardswish/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardswish/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardswish/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/activation/hardswish",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__hardswish/artifact",
+      "supports_variants": true
+    },
+    "activation__relu": {
+      "operator": "activation/relu",
+      "operator_key": "activation__relu",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        10
+      ],
+      "agent_steps_total": 10,
+      "tokens": {
+        "prompt_tokens": 105647,
+        "completion_tokens": 3940,
+        "total_tokens": 109587,
+        "rounds": [
+          {
+            "prompt_tokens": 105647,
+            "completion_tokens": 3940,
+            "total_tokens": 109587
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__relu/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__relu/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__relu/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__relu/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/activation/relu",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__relu/artifact",
+      "supports_variants": true
+    },
+    "activation__sigmoid": {
+      "operator": "activation/sigmoid",
+      "operator_key": "activation__sigmoid",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        21
+      ],
+      "agent_steps_total": 21,
+      "tokens": {
+        "prompt_tokens": 366987,
+        "completion_tokens": 11419,
+        "total_tokens": 378406,
+        "rounds": [
+          {
+            "prompt_tokens": 366987,
+            "completion_tokens": 11419,
+            "total_tokens": 378406
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__sigmoid/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__sigmoid/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__sigmoid/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__sigmoid/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/activation/sigmoid",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__sigmoid/artifact",
+      "supports_variants": true
+    },
+    "activation__swish": {
+      "operator": "activation/swish",
+      "operator_key": "activation__swish",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        11
+      ],
+      "agent_steps_total": 11,
+      "tokens": {
+        "prompt_tokens": 115049,
+        "completion_tokens": 4306,
+        "total_tokens": 119355,
+        "rounds": [
+          {
+            "prompt_tokens": 115049,
+            "completion_tokens": 4306,
+            "total_tokens": 119355
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__swish/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__swish/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__swish/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__swish/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/activation/swish",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/activation__swish/artifact",
+      "supports_variants": true
+    },
+    "attention__gqa": {
+      "operator": "attention/gqa",
+      "operator_key": "attention__gqa",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        40
+      ],
+      "agent_steps_total": 40,
+      "tokens": {
+        "prompt_tokens": 879137,
+        "completion_tokens": 13728,
+        "total_tokens": 892865,
+        "rounds": [
+          {
+            "prompt_tokens": 879137,
+            "completion_tokens": 13728,
+            "total_tokens": 892865
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__gqa/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__gqa/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__gqa/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/attention/gqa",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__gqa/artifact",
+      "supports_variants": false
+    },
+    "attention__merge_attn_states": {
+      "operator": "attention/merge_attn_states",
+      "operator_key": "attention__merge_attn_states",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        18
+      ],
+      "agent_steps_total": 18,
+      "tokens": {
+        "prompt_tokens": 218354,
+        "completion_tokens": 5148,
+        "total_tokens": 223502,
+        "rounds": [
+          {
+            "prompt_tokens": 218354,
+            "completion_tokens": 5148,
+            "total_tokens": 223502
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__merge_attn_states/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__merge_attn_states/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__merge_attn_states/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__merge_attn_states/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/attention/merge_attn_states",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__merge_attn_states/artifact",
+      "supports_variants": true
+    },
+    "attention__mha": {
+      "operator": "attention/mha",
+      "operator_key": "attention__mha",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        23
+      ],
+      "agent_steps_total": 23,
+      "tokens": {
+        "prompt_tokens": 347964,
+        "completion_tokens": 10263,
+        "total_tokens": 358227,
+        "rounds": [
+          {
+            "prompt_tokens": 347964,
+            "completion_tokens": 10263,
+            "total_tokens": 358227
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__mha/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__mha/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__mha/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/attention/mha",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__mha/artifact",
+      "supports_variants": false
+    },
+    "attention__rope": {
+      "operator": "attention/rope",
+      "operator_key": "attention__rope",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        17
+      ],
+      "agent_steps_total": 17,
+      "tokens": {
+        "prompt_tokens": 185437,
+        "completion_tokens": 3895,
+        "total_tokens": 189332,
+        "rounds": [
+          {
+            "prompt_tokens": 185437,
+            "completion_tokens": 3895,
+            "total_tokens": 189332
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__rope/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__rope/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__rope/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__rope/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/attention/rope",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/attention__rope/artifact",
+      "supports_variants": true
+    },
+    "conv__conv1d": {
+      "operator": "conv/conv1d",
+      "operator_key": "conv__conv1d",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        25
+      ],
+      "agent_steps_total": 25,
+      "tokens": {
+        "prompt_tokens": 289513,
+        "completion_tokens": 3889,
+        "total_tokens": 293402,
+        "rounds": [
+          {
+            "prompt_tokens": 289513,
+            "completion_tokens": 3889,
+            "total_tokens": 293402
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/conv__conv1d/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/conv__conv1d/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/conv__conv1d/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/conv/conv1d",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/conv__conv1d/artifact",
+      "supports_variants": false
+    },
+    "conv__conv2d": {
+      "operator": "conv/conv2d",
+      "operator_key": "conv__conv2d",
+      "status": "passed",
+      "rounds_attempted": 2,
+      "agent_steps_per_round": [
+        23,
+        55
+      ],
+      "agent_steps_total": 78,
+      "tokens": {
+        "prompt_tokens": 2675379,
+        "completion_tokens": 36030,
+        "total_tokens": 2711409,
+        "rounds": [
+          {
+            "prompt_tokens": 403204,
+            "completion_tokens": 8890,
+            "total_tokens": 412094
+          },
+          {
+            "prompt_tokens": 2272175,
+            "completion_tokens": 27140,
+            "total_tokens": 2299315
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/conv__conv2d/rounds/round_1/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/conv__conv2d/rounds/round_1/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/conv__conv2d/rounds/round_1/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/conv__conv2d/rounds/round_1/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [
+        "round 0 failed: compile=0, verify=0, perf=0, variants=False"
+      ],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/conv/conv2d",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/conv__conv2d/artifact",
+      "supports_variants": true
+    },
+    "conv__depthwiseconv": {
+      "operator": "conv/depthwiseconv",
+      "operator_key": "conv__depthwiseconv",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        34
+      ],
+      "agent_steps_total": 34,
+      "tokens": {
+        "prompt_tokens": 576265,
+        "completion_tokens": 10535,
+        "total_tokens": 586800,
+        "rounds": [
+          {
+            "prompt_tokens": 576265,
+            "completion_tokens": 10535,
+            "total_tokens": 586800
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/conv__depthwiseconv/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/conv__depthwiseconv/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/conv__depthwiseconv/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/conv/depthwiseconv",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/conv__depthwiseconv/artifact",
+      "supports_variants": false
+    },
+    "cvcuda__adaptive_threshold": {
+      "operator": "cvcuda/adaptive_threshold",
+      "operator_key": "cvcuda__adaptive_threshold",
+      "status": "passed",
+      "rounds_attempted": 3,
+      "agent_steps_per_round": [
+        18,
+        11,
+        16
+      ],
+      "agent_steps_total": 45,
+      "tokens": {
+        "prompt_tokens": 651473,
+        "completion_tokens": 15323,
+        "total_tokens": 666796,
+        "rounds": [
+          {
+            "prompt_tokens": 231177,
+            "completion_tokens": 6106,
+            "total_tokens": 237283
+          },
+          {
+            "prompt_tokens": 147729,
+            "completion_tokens": 3115,
+            "total_tokens": 150844
+          },
+          {
+            "prompt_tokens": 272567,
+            "completion_tokens": 6102,
+            "total_tokens": 278669
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/rounds/round_2/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/rounds/round_2/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/rounds/round_2/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/rounds/round_2/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [
+        "round 0 failed: compile=1, verify=1, perf=1, variants=False",
+        "round 1 failed: compile=1, verify=1, perf=1, variants=False"
+      ],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/cvcuda/adaptive_threshold",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/cvcuda__adaptive_threshold/artifact",
+      "supports_variants": true
+    },
+    "elementary__add": {
+      "operator": "elementary/add",
+      "operator_key": "elementary__add",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        18
+      ],
+      "agent_steps_total": 18,
+      "tokens": {
+        "prompt_tokens": 218316,
+        "completion_tokens": 7104,
+        "total_tokens": 225420,
+        "rounds": [
+          {
+            "prompt_tokens": 218316,
+            "completion_tokens": 7104,
+            "total_tokens": 225420
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__add/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__add/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__add/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__add/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/elementary/add",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__add/artifact",
+      "supports_variants": true
+    },
+    "elementary__sign": {
+      "operator": "elementary/sign",
+      "operator_key": "elementary__sign",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        29
+      ],
+      "agent_steps_total": 29,
+      "tokens": {
+        "prompt_tokens": 466616,
+        "completion_tokens": 11534,
+        "total_tokens": 478150,
+        "rounds": [
+          {
+            "prompt_tokens": 466616,
+            "completion_tokens": 11534,
+            "total_tokens": 478150
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sign/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sign/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sign/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sign/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/elementary/sign",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sign/artifact",
+      "supports_variants": true
+    },
+    "elementary__sin": {
+      "operator": "elementary/sin",
+      "operator_key": "elementary__sin",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        57
+      ],
+      "agent_steps_total": 57,
+      "tokens": {
+        "prompt_tokens": 1543792,
+        "completion_tokens": 18258,
+        "total_tokens": 1562050,
+        "rounds": [
+          {
+            "prompt_tokens": 1543792,
+            "completion_tokens": 18258,
+            "total_tokens": 1562050
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sin/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sin/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sin/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sin/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/elementary/sin",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sin/artifact",
+      "supports_variants": true
+    },
+    "elementary__square": {
+      "operator": "elementary/square",
+      "operator_key": "elementary__square",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        15
+      ],
+      "agent_steps_total": 15,
+      "tokens": {
+        "prompt_tokens": 114582,
+        "completion_tokens": 1944,
+        "total_tokens": 116526,
+        "rounds": [
+          {
+            "prompt_tokens": 114582,
+            "completion_tokens": 1944,
+            "total_tokens": 116526
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__square/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__square/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__square/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__square/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/elementary/square",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__square/artifact",
+      "supports_variants": true
+    },
+    "elementary__sub": {
+      "operator": "elementary/sub",
+      "operator_key": "elementary__sub",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        53
+      ],
+      "agent_steps_total": 53,
+      "tokens": {
+        "prompt_tokens": 1167308,
+        "completion_tokens": 14471,
+        "total_tokens": 1181779,
+        "rounds": [
+          {
+            "prompt_tokens": 1167308,
+            "completion_tokens": 14471,
+            "total_tokens": 1181779
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sub/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sub/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sub/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sub/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/elementary/sub",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/elementary__sub/artifact",
+      "supports_variants": true
+    },
+    "matmul__bmm": {
+      "operator": "matmul/bmm",
+      "operator_key": "matmul__bmm",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        25
+      ],
+      "agent_steps_total": 25,
+      "tokens": {
+        "prompt_tokens": 351112,
+        "completion_tokens": 9345,
+        "total_tokens": 360457,
+        "rounds": [
+          {
+            "prompt_tokens": 351112,
+            "completion_tokens": 9345,
+            "total_tokens": 360457
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__bmm/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__bmm/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__bmm/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/matmul/bmm",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__bmm/artifact",
+      "supports_variants": false
+    },
+    "matmul__dense": {
+      "operator": "matmul/dense",
+      "operator_key": "matmul__dense",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        18
+      ],
+      "agent_steps_total": 18,
+      "tokens": {
+        "prompt_tokens": 269961,
+        "completion_tokens": 12925,
+        "total_tokens": 282886,
+        "rounds": [
+          {
+            "prompt_tokens": 269961,
+            "completion_tokens": 12925,
+            "total_tokens": 282886
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__dense/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__dense/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__dense/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/matmul/dense",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__dense/artifact",
+      "supports_variants": false
+    },
+    "matmul__dot-product": {
+      "operator": "matmul/dot-product",
+      "operator_key": "matmul__dot-product",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        21
+      ],
+      "agent_steps_total": 21,
+      "tokens": {
+        "prompt_tokens": 290808,
+        "completion_tokens": 8411,
+        "total_tokens": 299219,
+        "rounds": [
+          {
+            "prompt_tokens": 290808,
+            "completion_tokens": 8411,
+            "total_tokens": 299219
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__dot-product/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__dot-product/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__dot-product/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__dot-product/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/matmul/dot-product",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__dot-product/artifact",
+      "supports_variants": true
+    },
+    "matmul__gemm": {
+      "operator": "matmul/gemm",
+      "operator_key": "matmul__gemm",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        47
+      ],
+      "agent_steps_total": 47,
+      "tokens": {
+        "prompt_tokens": 1962677,
+        "completion_tokens": 43948,
+        "total_tokens": 2006625,
+        "rounds": [
+          {
+            "prompt_tokens": 1962677,
+            "completion_tokens": 43948,
+            "total_tokens": 2006625
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemm/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemm/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemm/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemm/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/matmul/gemm",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemm/artifact",
+      "supports_variants": true
+    },
+    "matmul__gemv": {
+      "operator": "matmul/gemv",
+      "operator_key": "matmul__gemv",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        13
+      ],
+      "agent_steps_total": 13,
+      "tokens": {
+        "prompt_tokens": 160555,
+        "completion_tokens": 7341,
+        "total_tokens": 167896,
+        "rounds": [
+          {
+            "prompt_tokens": 160555,
+            "completion_tokens": 7341,
+            "total_tokens": 167896
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemv/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemv/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemv/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemv/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/matmul/gemv",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/matmul__gemv/artifact",
+      "supports_variants": true
+    },
+    "norm__batchnorm": {
+      "operator": "norm/batchnorm",
+      "operator_key": "norm__batchnorm",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        52
+      ],
+      "agent_steps_total": 52,
+      "tokens": {
+        "prompt_tokens": 1313036,
+        "completion_tokens": 20356,
+        "total_tokens": 1333392,
+        "rounds": [
+          {
+            "prompt_tokens": 1313036,
+            "completion_tokens": 20356,
+            "total_tokens": 1333392
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__batchnorm/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__batchnorm/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__batchnorm/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__batchnorm/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/norm/batchnorm",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__batchnorm/artifact",
+      "supports_variants": true
+    },
+    "norm__instancenorm": {
+      "operator": "norm/instancenorm",
+      "operator_key": "norm__instancenorm",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        24
+      ],
+      "agent_steps_total": 24,
+      "tokens": {
+        "prompt_tokens": 338392,
+        "completion_tokens": 11315,
+        "total_tokens": 349707,
+        "rounds": [
+          {
+            "prompt_tokens": 338392,
+            "completion_tokens": 11315,
+            "total_tokens": 349707
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__instancenorm/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__instancenorm/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__instancenorm/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/norm/instancenorm",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__instancenorm/artifact",
+      "supports_variants": false
+    },
+    "norm__layernorm": {
+      "operator": "norm/layernorm",
+      "operator_key": "norm__layernorm",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        20
+      ],
+      "agent_steps_total": 20,
+      "tokens": {
+        "prompt_tokens": 418522,
+        "completion_tokens": 27410,
+        "total_tokens": 445932,
+        "rounds": [
+          {
+            "prompt_tokens": 418522,
+            "completion_tokens": 27410,
+            "total_tokens": 445932
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__layernorm/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__layernorm/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__layernorm/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__layernorm/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/norm/layernorm",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__layernorm/artifact",
+      "supports_variants": true
+    },
+    "norm__rmsnorm": {
+      "operator": "norm/rmsnorm",
+      "operator_key": "norm__rmsnorm",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        13
+      ],
+      "agent_steps_total": 13,
+      "tokens": {
+        "prompt_tokens": 166994,
+        "completion_tokens": 7049,
+        "total_tokens": 174043,
+        "rounds": [
+          {
+            "prompt_tokens": 166994,
+            "completion_tokens": 7049,
+            "total_tokens": 174043
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__rmsnorm/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__rmsnorm/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__rmsnorm/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__rmsnorm/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/norm/rmsnorm",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/norm__rmsnorm/artifact",
+      "supports_variants": true
+    },
+    "other__concat": {
+      "operator": "other/concat",
+      "operator_key": "other__concat",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        27
+      ],
+      "agent_steps_total": 27,
+      "tokens": {
+        "prompt_tokens": 344362,
+        "completion_tokens": 8260,
+        "total_tokens": 352622,
+        "rounds": [
+          {
+            "prompt_tokens": 344362,
+            "completion_tokens": 8260,
+            "total_tokens": 352622
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__concat/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__concat/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__concat/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/other/concat",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__concat/artifact",
+      "supports_variants": false
+    },
+    "other__deformable": {
+      "operator": "other/deformable",
+      "operator_key": "other__deformable",
+      "status": "passed",
+      "rounds_attempted": 2,
+      "agent_steps_per_round": [
+        89,
+        26
+      ],
+      "agent_steps_total": 115,
+      "tokens": {
+        "prompt_tokens": 3940149,
+        "completion_tokens": 41701,
+        "total_tokens": 3981850,
+        "rounds": [
+          {
+            "prompt_tokens": 3371822,
+            "completion_tokens": 36485,
+            "total_tokens": 3408307
+          },
+          {
+            "prompt_tokens": 568327,
+            "completion_tokens": 5216,
+            "total_tokens": 573543
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__deformable/rounds/round_1/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__deformable/rounds/round_1/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__deformable/rounds/round_1/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [
+        "round 0 failed: compile=0, verify=1, perf=1, variants=None"
+      ],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/other/deformable",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__deformable/artifact",
+      "supports_variants": false
+    },
+    "other__embedding": {
+      "operator": "other/embedding",
+      "operator_key": "other__embedding",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        15
+      ],
+      "agent_steps_total": 15,
+      "tokens": {
+        "prompt_tokens": 183085,
+        "completion_tokens": 6845,
+        "total_tokens": 189930,
+        "rounds": [
+          {
+            "prompt_tokens": 183085,
+            "completion_tokens": 6845,
+            "total_tokens": 189930
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__embedding/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__embedding/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__embedding/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__embedding/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/other/embedding",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__embedding/artifact",
+      "supports_variants": true
+    },
+    "other__gatemlp": {
+      "operator": "other/gatemlp",
+      "operator_key": "other__gatemlp",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        10
+      ],
+      "agent_steps_total": 10,
+      "tokens": {
+        "prompt_tokens": 87065,
+        "completion_tokens": 2644,
+        "total_tokens": 89709,
+        "rounds": [
+          {
+            "prompt_tokens": 87065,
+            "completion_tokens": 2644,
+            "total_tokens": 89709
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gatemlp/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gatemlp/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gatemlp/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/other/gatemlp",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gatemlp/artifact",
+      "supports_variants": false
+    },
+    "other__gather": {
+      "operator": "other/gather",
+      "operator_key": "other__gather",
+      "status": "failed",
+      "rounds_attempted": 4,
+      "agent_steps_per_round": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "agent_steps_total": 0,
+      "tokens": {
+        "prompt_tokens": 1259904,
+        "completion_tokens": 20637,
+        "total_tokens": 1280541,
+        "rounds": [
+          {
+            "prompt_tokens": 90608,
+            "completion_tokens": 2742,
+            "total_tokens": 93350
+          },
+          {
+            "prompt_tokens": 908439,
+            "completion_tokens": 12841,
+            "total_tokens": 921280
+          },
+          {
+            "prompt_tokens": 58340,
+            "completion_tokens": 1384,
+            "total_tokens": 59724
+          },
+          {
+            "prompt_tokens": 202517,
+            "completion_tokens": 3670,
+            "total_tokens": 206187
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gather/rounds/round_3/compile.log"
+      },
+      "verify": {
+        "passed": false,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gather/rounds/round_3/verify.log"
+      },
+      "perf": {
+        "passed": false,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gather/rounds/round_3/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [
+        "round 0 failed: compile=0, verify=1, perf=1, variants=None",
+        "round 1 failed: compile=0, verify=1, perf=1, variants=None",
+        "round 2 failed: compile=0, verify=1, perf=1, variants=None",
+        "round 3 failed: compile=0, verify=1, perf=1, variants=None"
+      ],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/other/gather",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gather/artifact",
+      "supports_variants": false
+    },
+    "other__scatter": {
+      "operator": "other/scatter",
+      "operator_key": "other__scatter",
+      "status": "passed",
+      "rounds_attempted": 2,
+      "agent_steps_per_round": [
+        0,
+        35
+      ],
+      "agent_steps_total": 35,
+      "tokens": {
+        "prompt_tokens": 5288186,
+        "completion_tokens": 12592,
+        "total_tokens": 5300778,
+        "rounds": [
+          {
+            "prompt_tokens": 313930,
+            "completion_tokens": 3290,
+            "total_tokens": 317220
+          },
+          {
+            "prompt_tokens": 4974256,
+            "completion_tokens": 9302,
+            "total_tokens": 4983558
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__scatter/rounds/round_2/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__scatter/rounds/round_2/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__scatter/rounds/round_2/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [
+        "round 0 failed: compile=0, verify=1, perf=1, variants=None"
+      ],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/other/scatter",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__scatter/artifact",
+      "supports_variants": false
+    },
+    "other__nms": {
+      "operator": "other/nms",
+      "operator_key": "other__nms",
+      "status": "passed",
+      "rounds_attempted": 2,
+      "agent_steps_per_round": [
+        38,
+        23
+      ],
+      "agent_steps_total": 61,
+      "tokens": {
+        "prompt_tokens": 1049240,
+        "completion_tokens": 20243,
+        "total_tokens": 1069483,
+        "rounds": [
+          {
+            "prompt_tokens": 725513,
+            "completion_tokens": 14482,
+            "total_tokens": 739995
+          },
+          {
+            "prompt_tokens": 323727,
+            "completion_tokens": 5761,
+            "total_tokens": 329488
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__nms/rounds/round_2/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__nms/rounds/round_2/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__nms/rounds/round_2/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__nms/rounds/round_2/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [
+        "round 0 failed: compile=2, verify=1, perf=1, variants=False"
+      ],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/other/nms",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__nms/artifact",
+      "supports_variants": true
+    },
+    "other__transpose": {
+      "operator": "other/transpose",
+      "operator_key": "other__transpose",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        26
+      ],
+      "agent_steps_total": 26,
+      "tokens": {
+        "prompt_tokens": 453166,
+        "completion_tokens": 13451,
+        "total_tokens": 466617,
+        "rounds": [
+          {
+            "prompt_tokens": 453166,
+            "completion_tokens": 13451,
+            "total_tokens": 466617
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__transpose/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__transpose/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__transpose/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__transpose/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/other/transpose",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__transpose/artifact",
+      "supports_variants": true
+    },
+    "pool__avgpool": {
+      "operator": "pool/avgpool",
+      "operator_key": "pool__avgpool",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        69
+      ],
+      "agent_steps_total": 69,
+      "tokens": {
+        "prompt_tokens": 1850773,
+        "completion_tokens": 21016,
+        "total_tokens": 1871789,
+        "rounds": [
+          {
+            "prompt_tokens": 1850773,
+            "completion_tokens": 21016,
+            "total_tokens": 1871789
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__avgpool/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__avgpool/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__avgpool/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/pool/avgpool",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__avgpool/artifact",
+      "supports_variants": false
+    },
+    "pool__maxpool": {
+      "operator": "pool/maxpool",
+      "operator_key": "pool__maxpool",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        55
+      ],
+      "agent_steps_total": 55,
+      "tokens": {
+        "prompt_tokens": 1396842,
+        "completion_tokens": 15289,
+        "total_tokens": 1412131,
+        "rounds": [
+          {
+            "prompt_tokens": 1396842,
+            "completion_tokens": 15289,
+            "total_tokens": 1412131,
+            "cache_read_tokens": 1253564,
+            "cache_write_tokens": 143179
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__maxpool/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__maxpool/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__maxpool/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/pool/maxpool",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__maxpool/artifact",
+      "supports_variants": false
+    },
+    "pool__minpool": {
+      "operator": "pool/minpool",
+      "operator_key": "pool__minpool",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        57
+      ],
+      "agent_steps_total": 57,
+      "tokens": {
+        "prompt_tokens": 1420918,
+        "completion_tokens": 16161,
+        "total_tokens": 1437079,
+        "rounds": [
+          {
+            "prompt_tokens": 1420918,
+            "completion_tokens": 16161,
+            "total_tokens": 1437079,
+            "cache_read_tokens": 1297688,
+            "cache_write_tokens": 123120
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__minpool/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__minpool/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__minpool/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/pool/minpool",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__minpool/artifact",
+      "supports_variants": false
+    },
+    "pool__sumpool": {
+      "operator": "pool/sumpool",
+      "operator_key": "pool__sumpool",
+      "status": "passed",
+      "rounds_attempted": 2,
+      "agent_steps_per_round": [
+        40,
+        50
+      ],
+      "agent_steps_total": 90,
+      "tokens": {
+        "prompt_tokens": 2008793,
+        "completion_tokens": 31562,
+        "total_tokens": 2040355,
+        "rounds": [
+          {
+            "prompt_tokens": 782041,
+            "completion_tokens": 16144,
+            "total_tokens": 798185,
+            "cache_read_tokens": 687152,
+            "cache_write_tokens": 94754
+          },
+          {
+            "prompt_tokens": 1226752,
+            "completion_tokens": 15418,
+            "total_tokens": 1242170,
+            "cache_read_tokens": 1026013,
+            "cache_write_tokens": 200574
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__sumpool/rounds/round_1/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__sumpool/rounds/round_1/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__sumpool/rounds/round_1/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [
+        "round 0 failed: compile=0, verify=1, perf=1, variants=None"
+      ],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/pool/sumpool",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/pool__sumpool/artifact",
+      "supports_variants": false
+    },
+    "reduction__causal_softmax": {
+      "operator": "reduction/causal_softmax",
+      "operator_key": "reduction__causal_softmax",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        23
+      ],
+      "agent_steps_total": 23,
+      "tokens": {
+        "prompt_tokens": 309782,
+        "completion_tokens": 5788,
+        "total_tokens": 315570,
+        "rounds": [
+          {
+            "prompt_tokens": 309782,
+            "completion_tokens": 5788,
+            "total_tokens": 315570,
+            "cache_read_tokens": 231433,
+            "cache_write_tokens": 78262
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__causal_softmax/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__causal_softmax/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__causal_softmax/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__causal_softmax/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/reduction/causal_softmax",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__causal_softmax/artifact",
+      "supports_variants": true
+    },
+    "reduction__histogram": {
+      "operator": "reduction/histogram",
+      "operator_key": "reduction__histogram",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        22
+      ],
+      "agent_steps_total": 22,
+      "tokens": {
+        "prompt_tokens": 244623,
+        "completion_tokens": 3347,
+        "total_tokens": 247970,
+        "rounds": [
+          {
+            "prompt_tokens": 244623,
+            "completion_tokens": 3347,
+            "total_tokens": 247970,
+            "cache_read_tokens": 215814,
+            "cache_write_tokens": 28724
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__histogram/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__histogram/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__histogram/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__histogram/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/reduction/histogram",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__histogram/artifact",
+      "supports_variants": true
+    },
+    "reduction__max": {
+      "operator": "reduction/max",
+      "operator_key": "reduction__max",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        24
+      ],
+      "agent_steps_total": 24,
+      "tokens": {
+        "prompt_tokens": 252635,
+        "completion_tokens": 4425,
+        "total_tokens": 257060,
+        "rounds": [
+          {
+            "prompt_tokens": 252635,
+            "completion_tokens": 4425,
+            "total_tokens": 257060,
+            "cache_read_tokens": 212765,
+            "cache_write_tokens": 39772
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__max/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__max/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__max/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/reduction/max",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__max/artifact",
+      "supports_variants": false
+    },
+    "reduction__mean": {
+      "operator": "reduction/mean",
+      "operator_key": "reduction__mean",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        19
+      ],
+      "agent_steps_total": 19,
+      "tokens": {
+        "prompt_tokens": 188991,
+        "completion_tokens": 4420,
+        "total_tokens": 193411,
+        "rounds": [
+          {
+            "prompt_tokens": 188991,
+            "completion_tokens": 4420,
+            "total_tokens": 193411,
+            "cache_read_tokens": 150975,
+            "cache_write_tokens": 37919
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__mean/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__mean/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__mean/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/reduction/mean",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__mean/artifact",
+      "supports_variants": false
+    },
+    "reduction__min": {
+      "operator": "reduction/min",
+      "operator_key": "reduction__min",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        17
+      ],
+      "agent_steps_total": 17,
+      "tokens": {
+        "prompt_tokens": 169157,
+        "completion_tokens": 3982,
+        "total_tokens": 173139,
+        "rounds": [
+          {
+            "prompt_tokens": 169157,
+            "completion_tokens": 3982,
+            "total_tokens": 173139,
+            "cache_read_tokens": 137517,
+            "cache_write_tokens": 31564
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__min/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__min/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__min/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": false,
+        "passed": null,
+        "log": ""
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/reduction/min",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__min/artifact",
+      "supports_variants": false
+    },
+    "reduction__softmax": {
+      "operator": "reduction/softmax",
+      "operator_key": "reduction__softmax",
+      "status": "passed",
+      "rounds_attempted": 1,
+      "agent_steps_per_round": [
+        49
+      ],
+      "agent_steps_total": 49,
+      "tokens": {
+        "prompt_tokens": 858785,
+        "completion_tokens": 44013,
+        "total_tokens": 902798,
+        "rounds": [
+          {
+            "prompt_tokens": 858785,
+            "completion_tokens": 44013,
+            "total_tokens": 902798,
+            "cache_read_tokens": 635937,
+            "cache_write_tokens": 222570
+          }
+        ]
+      },
+      "compile_only": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__softmax/rounds/round_0/compile.log"
+      },
+      "verify": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__softmax/rounds/round_0/verify.log"
+      },
+      "perf": {
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__softmax/rounds/round_0/perf.log"
+      },
+      "variants": {
+        "executed": true,
+        "passed": true,
+        "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__softmax/rounds/round_0/variants.log"
+      },
+      "final_kernel": "artifact/cuda_/kernel.cu",
+      "errors": [],
+      "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/reduction/softmax",
+      "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__softmax/artifact",
+      "supports_variants": true
+    }
+  },
+  "success_rate": "35/36",
+  "failed": [
+    "other__gather"
+  ]
+}

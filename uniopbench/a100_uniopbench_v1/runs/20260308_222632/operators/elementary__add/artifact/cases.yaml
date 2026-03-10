@@ -1,0 +1,25 @@
+# operators/elementary/add/cases.yaml
+dtypes:
+  - float32
+  - float16
+
+shapes:
+  # 1024x1024 的四种优化等级
+  - shape: [1024, 1024]
+    op_levels: 0 # 基础
+  - shape: [1024, 1024]
+    op_levels: 1 # x4向量化
+  - shape: [1024, 1024]
+    op_levels: 2 # x8向量化
+  - shape: [1024, 1024]
+    op_levels: 3 # x8_pack向量化
+    
+  # 2048x2048 的四种优化等级
+  - shape: [2048, 2048]
+    op_levels: 0
+  - shape: [2048, 2048]
+    op_levels: 1
+  - shape: [2048, 2048]
+    op_levels: 2
+  - shape: [2048, 2048]
+    op_levels: 3

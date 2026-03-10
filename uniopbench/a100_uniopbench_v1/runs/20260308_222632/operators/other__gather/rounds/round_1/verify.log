@@ -1,0 +1,35 @@
+
+================================================================================
+Testing Gather operator with CUDA backend
+Data shape: (50, 128, 4), Indices: 4
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded
+Generating test data...
+Running PyTorch reference...
+Running CUDA kernel...
+Traceback (most recent call last):
+  File "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gather/artifact/test.py", line 128, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__gather/artifact/test.py", line 112, in main
+    result = run_test(
+             ^^^^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/optest/execution/runner.py", line 183, in run_test
+    return runner.run(testcase, params, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/optest/execution/runner.py", line 118, in run
+    self.backend.execute(kernel, test_inputs)
+  File "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/optest/core/backend.py", line 85, in execute
+    torch.cuda.synchronize()  # Wait for CUDA kernel to complete
+    ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/yuqiuchu/miniconda3/envs/ict-agent/lib/python3.11/site-packages/torch/cuda/__init__.py", line 985, in synchronize
+    return torch._C._cuda_synchronize()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
