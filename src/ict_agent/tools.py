@@ -298,6 +298,34 @@ def _confirm_shell_command(command: str) -> str:
         print("Please enter 1, 2, or 3.")
 
 
+_EXPORT_RE = re.compile(
+    r"""export\s+([A-Za-z_][A-Za-z0-9_]*)=("[^"]*"|'[^']*'|[^\s;&]+)""",
+)
+
+
+def _propagate_exports(command: str, env: dict[str, str]) -> None:
+    """Parse ``export VAR=VALUE`` fragments from *command* and set them in
+    ``os.environ`` so that future subprocesses inherit the values.
+
+    Variable references like ``$VAR`` or ``${VAR}`` are expanded using *env*
+    (the snapshot that was passed to the subprocess).
+    """
+    for match in _EXPORT_RE.finditer(command):
+        name = match.group(1)
+        value = match.group(2)
+        # Strip surrounding quotes
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+        # Expand $VAR / ${VAR} references
+        def _expand(m: re.Match) -> str:
+            ref = m.group(1) or m.group(2)
+            return env.get(ref, os.environ.get(ref, ""))
+        value = re.sub(r"\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)", _expand, value)
+        os.environ[name] = value
+
+
 def _run_shell_command(command: str, timeout_sec: int, cwd: str | None = None) -> str:
     timeout_sec = max(1, min(timeout_sec, 600))
     work_dir: str | None = None
@@ -396,6 +424,10 @@ def _run_shell_command(command: str, timeout_sec: int, cwd: str | None = None) -
 
     if timeout_hit:
         return f"Error: command timed out after {timeout_sec}s"
+
+    # Propagate `export VAR=VALUE` from the command into os.environ so that
+    # later subprocesses (e.g. orchestrator evaluation) inherit them.
+    _propagate_exports(command, env)
 
     lines = [
         f"exit_code={exit_code}",

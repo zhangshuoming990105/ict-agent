@@ -28,7 +28,11 @@ You are expected to act autonomously:
 - after the initial creation, use `edit_file` for incremental fixes
 - run the existing test commands
 - fix failures in the same turn when possible
-- stop only after compile and correctness pass, or after reasonable repair attempts are exhausted
+
+**When to stop:**
+- Once `python test.py --no-perf` prints `STATUS: PASSED` (correctness verified), run `python test.py` once to record performance, then **immediately stop and reply with your summary**. Do NOT keep optimising.
+- Performance is recorded but not a pass/fail criterion. The orchestrator evaluates your kernel externally — you do not need to chase speedup numbers.
+- If after reasonable repair attempts correctness still fails, stop and report the failure.
 
 Default edit rule:
 - Only write/edit `cuda_/kernel.cu`
@@ -69,14 +73,16 @@ That means:
 
 ## 4. Required Command Sequence
 
-Use the existing operator commands:
+Run these commands **in order** and stop as soon as correctness is confirmed:
 
-1. `python test.py --compile-only`
-2. `python test.py --no-perf`
-3. `python test.py`
-4. If variants are supported: `python test.py --variants yaml --no-perf`
+1. `python test.py --compile-only` — must succeed before continuing
+2. `python test.py --no-perf` — **the authoritative correctness check**; if `STATUS: PASSED`, proceed to step 3
+3. `python test.py` — record performance (one run is enough; do NOT iterate to improve speedup)
+4. **Only if** the operator's `test.py` accepts `--variants` (check with `grep -- '--variants' test.py`): `python test.py --variants yaml --no-perf`
+5. **Stop and reply with a short summary.** The orchestrator handles final evaluation.
 
-Use those outputs to guide repairs.
+Use those outputs to guide repairs only if a step fails. Do NOT re-run steps that already passed.
+If a command is not supported (e.g. `--variants` not recognised), skip it — that is normal.
 
 ## 5. Performance Guidance
 
@@ -109,9 +115,9 @@ If a previous kernel is provided in the prompt, the file `cuda_/kernel.cu` alrea
 
 ## 7. Final Response
 
-Do not return code blocks as the main output.
+Once correctness passes (`STATUS: PASSED`), **stop immediately** — do not attempt further optimization rounds.
 
-Instead:
-- edit the workspace file directly
-- then reply with a short summary of what changed
-- include whether compile and correctness passed
+Reply with a short summary that includes:
+- whether compile and correctness passed
+- the speedup number from `python test.py` (informational only)
+- do NOT return code blocks as the main output

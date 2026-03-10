@@ -8,7 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -91,7 +91,7 @@ class ExperimentConfig:
     top_p: float | None = None
     top_k: int | None = None
     max_tokens: int = 8192
-    max_repair_rounds: int = 3
+    max_repair_rounds: int = 1
     max_agent_steps: int | None = 0  # 0 = unlimited; None = use formula max(8, max_repair_rounds*4)
     cuda_arch: str = "sm_80"
     enable_torch_compile_baseline: bool = True
@@ -255,6 +255,7 @@ def build_prompt(
     operator_dir: Path,
     prior_round: dict[str, Any] | None,
     artifact_rel_path: str = "",
+    has_variants: bool = False,
 ) -> tuple[str, str]:
     system_parts = [
         "You are operating as the full ict-agent runtime inside an isolated UniOpBench operator workspace.",
@@ -289,9 +290,14 @@ def build_prompt(
         f"python test.py --compile-only{cmd_hint}",
         f"python test.py --no-perf{cmd_hint}",
         f"python test.py{cmd_hint}",
-        f"If variants are supported: python test.py --variants yaml --no-perf{cmd_hint}",
-        "Work autonomously in this turn. When compile and correctness pass, reply with a short summary.",
     ]
+    if has_variants:
+        user_parts.append(f"python test.py --variants yaml --no-perf{cmd_hint}")
+    user_parts.append(
+        "Work autonomously in this turn. When compile and correctness pass (STATUS: PASSED), "
+        "run `python test.py` once for perf, then STOP and reply with a short summary. "
+        "Do NOT keep optimizing after correctness passes.",
+    )
     for path in prompt_file_list(operator_dir):
         rel = path.relative_to(operator_dir)
         lang = path.suffix.lstrip(".") or "text"
@@ -411,7 +417,7 @@ def run_agent_round(
         "had_failure": result.had_failure,
         "error": result.error,
         "ctx_messages": result.ctx_messages,
-        "token_usage": result.token_usage,
+        "token_usage": asdict(result.token_usage),
     }
     if result.ctx_messages:
         from ict_agent.context import ContextManager
@@ -469,6 +475,117 @@ def cleanup_artifact_tree(artifact_dir: Path) -> None:
         for path in artifact_dir.rglob(pattern):
             if path.is_file():
                 path.unlink(missing_ok=True)
+
+
+def _extract_tool_blocks(text: str) -> list[str]:
+    """Split trajectory text into TOOL (run_shell) blocks."""
+    blocks: list[str] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if re.match(r"^\[\d+\] TOOL \(run_shell\)", line):
+            block_lines = [line]
+            i += 1
+            # Collect until next section marker (e.g. [NN] ASSISTANT or [NN] TOOL or --- separator)
+            while i < len(lines):
+                if re.match(r"^-{10,}$", lines[i]) or re.match(r"^\[\d+\] ", lines[i]):
+                    break
+                block_lines.append(lines[i])
+                i += 1
+            blocks.append("\n".join(block_lines))
+        else:
+            i += 1
+    return blocks
+
+
+def parse_agent_test_results(trajectory_path: Path) -> dict[str, Any] | None:
+    """Parse agent trajectory for test.py results run by the agent itself.
+
+    Scans TOOL (run_shell) blocks for test.py executions and extracts pass/fail
+    status from the output markers (STATUS: PASSED / STATUS: FAILED).
+
+    Returns a dict with verify_passed, perf_passed, verify_log, perf_log,
+    variants_passed, variants_log — or None if no relevant test results found.
+    """
+    if not trajectory_path.is_file():
+        return None
+    text = trajectory_path.read_text(encoding="utf-8", errors="replace")
+    blocks = _extract_tool_blocks(text)
+
+    verify_passed: bool | None = None
+    verify_log = ""
+    perf_passed: bool | None = None
+    perf_log = ""
+    variants_passed: bool | None = None
+    variants_log = ""
+
+    for block in blocks:
+        # Only consider blocks that actually ran test.py
+        cmd_match = re.search(r"command=(.+)", block)
+        if not cmd_match:
+            continue
+        cmd = cmd_match.group(1).strip()
+        if "test.py" not in cmd:
+            continue
+
+        # Determine status from output markers
+        has_passed = "\N{WHITE HEAVY CHECK MARK} STATUS: PASSED" in block or "STATUS: PASSED" in block
+        has_failed = "\N{CROSS MARK} STATUS: FAILED" in block or "STATUS: FAILED" in block
+
+        is_compile_only = "--compile-only" in cmd
+        is_no_perf = "--no-perf" in cmd and not is_compile_only
+        is_variants = "--variants" in cmd
+        is_full_run = (
+            not is_compile_only
+            and not is_no_perf
+            and not is_variants
+            and re.search(r"python\s+test\.py\s*($|[^-]|2>&1|\|)", cmd)
+        )
+
+        # Extract the output portion of the block (after command= line)
+        cmd_line_idx = block.find("command=")
+        output_text = block[cmd_line_idx:] if cmd_line_idx >= 0 else block
+
+        if is_variants:
+            if has_passed and not has_failed:
+                variants_passed = True
+                variants_log = output_text
+            elif has_failed:
+                variants_passed = False
+                variants_log = output_text
+        elif is_no_perf:
+            # verify (--no-perf): correctness check
+            if has_passed and not has_failed:
+                verify_passed = True
+                verify_log = output_text
+            elif has_failed:
+                verify_passed = False
+                verify_log = output_text
+        elif is_full_run:
+            # full run: includes perf
+            if has_passed and not has_failed:
+                perf_passed = True
+                perf_log = output_text
+                # Also counts as verify if we haven't seen a dedicated --no-perf pass
+                if verify_passed is None:
+                    verify_passed = True
+                    verify_log = output_text
+            elif has_failed:
+                perf_passed = False
+                perf_log = output_text
+
+    if verify_passed is None and perf_passed is None:
+        return None  # No relevant test results found
+
+    return {
+        "verify_passed": bool(verify_passed) if verify_passed is not None else False,
+        "perf_passed": bool(perf_passed) if perf_passed is not None else False,
+        "verify_log": verify_log,
+        "perf_log": perf_log,
+        "variants_passed": variants_passed,
+        "variants_log": variants_log,
+    }
 
 
 def operator_result_template(operator: str, operator_key: str) -> dict[str, Any]:
@@ -545,7 +662,8 @@ def run_uniopbench_task(args) -> int:
             artifact_rel = ""  # workspace is artifact_dir; no cwd override needed
             if args.dry_run:
                 system_prompt, user_prompt = build_prompt(
-                    task_config, operator, source_dir, None, artifact_rel_path=artifact_rel
+                    task_config, operator, source_dir, None, artifact_rel_path=artifact_rel,
+                    has_variants=result["supports_variants"],
                 )
                 write_text(prompt_dir / "system.txt", system_prompt)
                 write_text(prompt_dir / "user.txt", user_prompt)
@@ -560,7 +678,8 @@ def run_uniopbench_task(args) -> int:
                 round_dir = rounds_dir / f"round_{round_idx}"
                 round_dir.mkdir(parents=True, exist_ok=True)
                 system_prompt, user_prompt = build_prompt(
-                    task_config, operator, source_dir, prior_round, artifact_rel_path=artifact_rel
+                    task_config, operator, source_dir, prior_round, artifact_rel_path=artifact_rel,
+                    has_variants=result["supports_variants"],
                 )
                 write_text(prompt_dir / "system.txt", system_prompt)
                 write_text(prompt_dir / "user.txt", user_prompt)
@@ -588,76 +707,116 @@ def run_uniopbench_task(args) -> int:
                 write_text(round_dir / "extracted_kernel.cu", kernel_source)
                 result["rounds_attempted"] = round_idx + 1
 
-                compile_code, compile_log = run_command(
-                    [sys.executable, "test.py", "--compile-only"],
-                    artifact_dir,
-                    env,
-                    round_dir / "compile.log",
-                )
-                result["compile_only"] = {
-                    "passed": compile_code == 0,
-                    "log": str(round_dir / "compile.log"),
-                }
+                # --- Determine correctness: prefer agent's own test results ---
+                # The agent may set up env (e.g. LD_LIBRARY_PATH on non-NV GPUs)
+                # that the orchestrator's subprocess doesn't inherit, so re-running
+                # externally can produce false negatives.  Trust the agent's results
+                # when they are available; fall back to external verification otherwise.
+                agent_tr = parse_agent_test_results(round_dir / "trajectory.log")
+                use_agent_results = agent_tr is not None and agent_tr["verify_passed"]
 
-                if compile_code == 0:
+                if use_agent_results:
+                    logger.log(f"  [agent-verified] trusting agent's own test results for {operator}")
+                    write_text(round_dir / "verify.log", agent_tr["verify_log"])
+                    verify_code = 0
+                    verify_log = agent_tr["verify_log"]
+                    result["compile_only"] = {
+                        "passed": True,
+                        "log": str(round_dir / "verify.log"),
+                    }
+                    result["verify"] = {
+                        "passed": True,
+                        "log": str(round_dir / "verify.log"),
+                    }
+
+                    if agent_tr["perf_log"]:
+                        write_text(round_dir / "perf.log", agent_tr["perf_log"])
+                        perf_log = agent_tr["perf_log"]
+                        result["perf"] = {
+                            "passed": agent_tr["perf_passed"],
+                            "log": str(round_dir / "perf.log"),
+                        }
+                    else:
+                        perf_log = "Agent did not run performance test.\n"
+                        write_text(round_dir / "perf.log", perf_log)
+                        result["perf"] = {"passed": False, "log": str(round_dir / "perf.log")}
+
+                    if agent_tr["variants_passed"] is not None:
+                        write_text(round_dir / "variants.log", agent_tr["variants_log"])
+                        variants_log = agent_tr["variants_log"]
+                        result["variants"] = {
+                            "executed": True,
+                            "passed": agent_tr["variants_passed"],
+                            "log": str(round_dir / "variants.log"),
+                        }
+                    elif result["supports_variants"]:
+                        variants_log = ""
+                        result["variants"] = {"executed": False, "passed": None, "log": ""}
+                    else:
+                        variants_log = ""
+                        result["variants"] = {"executed": False, "passed": None, "log": ""}
+                else:
+                    # Fallback: run external verification (original behaviour)
                     verify_code, verify_log = run_command(
                         [sys.executable, "test.py", "--no-perf"],
                         artifact_dir,
                         env,
                         round_dir / "verify.log",
                     )
-                else:
-                    verify_code, verify_log = 1, "Skipped because compile-only failed.\n"
-                    write_text(round_dir / "verify.log", verify_log)
-                result["verify"] = {
-                    "passed": verify_code == 0,
-                    "log": str(round_dir / "verify.log"),
-                }
-
-                if compile_code == 0 and verify_code == 0:
-                    perf_code, perf_log = run_command(
-                        [sys.executable, "test.py"],
-                        artifact_dir,
-                        env,
-                        round_dir / "perf.log",
-                    )
-                else:
-                    perf_code, perf_log = 1, "Skipped because correctness checks did not pass.\n"
-                    write_text(round_dir / "perf.log", perf_log)
-                result["perf"] = {
-                    "passed": perf_code == 0,
-                    "log": str(round_dir / "perf.log"),
-                }
-
-                variants_log = ""
-                if result["supports_variants"] and compile_code == 0 and verify_code == 0:
-                    variants_code, variants_log = run_command(
-                        [sys.executable, "test.py", "--variants", "yaml", "--no-perf"],
-                        artifact_dir,
-                        env,
-                        round_dir / "variants.log",
-                    )
-                    result["variants"] = {
-                        "executed": True,
-                        "passed": variants_code == 0,
-                        "log": str(round_dir / "variants.log"),
+                    result["compile_only"] = {
+                        "passed": verify_code == 0,
+                        "log": str(round_dir / "verify.log"),
                     }
-                elif result["supports_variants"]:
-                    variants_log = "Skipped because correctness checks did not pass.\n"
-                    write_text(round_dir / "variants.log", variants_log)
-                    result["variants"] = {
-                        "executed": True,
-                        "passed": False,
-                        "log": str(round_dir / "variants.log"),
-                    }
-                else:
-                    result["variants"] = {
-                        "executed": False,
-                        "passed": None,
-                        "log": "",
+                    result["verify"] = {
+                        "passed": verify_code == 0,
+                        "log": str(round_dir / "verify.log"),
                     }
 
-                correctness_ok = result["compile_only"]["passed"] and result["verify"]["passed"]
+                    if verify_code == 0:
+                        perf_code, perf_log = run_command(
+                            [sys.executable, "test.py"],
+                            artifact_dir,
+                            env,
+                            round_dir / "perf.log",
+                        )
+                    else:
+                        perf_code, perf_log = 1, "Skipped because correctness checks did not pass.\n"
+                        write_text(round_dir / "perf.log", perf_log)
+                    result["perf"] = {
+                        "passed": (verify_code == 0 and perf_code == 0),
+                        "log": str(round_dir / "perf.log"),
+                    }
+
+                    variants_log = ""
+                    if result["supports_variants"] and verify_code == 0:
+                        variants_code, variants_log = run_command(
+                            [sys.executable, "test.py", "--variants", "yaml", "--no-perf"],
+                            artifact_dir,
+                            env,
+                            round_dir / "variants.log",
+                        )
+                        result["variants"] = {
+                            "executed": True,
+                            "passed": variants_code == 0,
+                            "log": str(round_dir / "variants.log"),
+                        }
+                    elif result["supports_variants"]:
+                        variants_log = "Skipped because correctness checks did not pass.\n"
+                        write_text(round_dir / "variants.log", variants_log)
+                        result["variants"] = {
+                            "executed": True,
+                            "passed": False,
+                            "log": str(round_dir / "variants.log"),
+                        }
+                    else:
+                        result["variants"] = {
+                            "executed": False,
+                            "passed": None,
+                            "log": "",
+                        }
+
+                # Overall correctness: verify must pass; variants too if executed.
+                correctness_ok = result["verify"]["passed"]
                 if result["variants"]["executed"]:
                     correctness_ok = correctness_ok and bool(result["variants"]["passed"])
 
@@ -667,14 +826,15 @@ def run_uniopbench_task(args) -> int:
                     break
 
                 error_message = (
-                    f"round {round_idx} failed: compile={compile_code}, "
-                    f"verify={verify_code}, perf={perf_code}, variants={result['variants']['passed']}"
+                    f"round {round_idx} failed: "
+                    f"verify={result['verify']['passed']}, perf={result['perf']['passed']}, "
+                    f"variants={result['variants']['passed']}"
                 )
                 result["errors"].append(error_message)
                 logger.log(f"[retry] {operator}: {error_message}")
                 prior_round = {
                     "kernel": kernel_source,
-                    "compile_log": compile_log,
+                    "compile_log": verify_log,
                     "verify_log": verify_log,
                     "perf_log": perf_log,
                     "variants_log": variants_log,
