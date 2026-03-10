@@ -83,6 +83,9 @@ ict-agent --task uniopbench --operators norm/rmsnorm optimize \
   --rounds 3 --target-speedup 1.5 \
   --ref-impl path/to/kernel.cu
 
+# Give up after 2 versioning rounds if target not met (separate from --rounds)
+ict-agent --task uniopbench --operators norm/rmsnorm optimize --rounds 5 --max-version 2 --target-speedup 1.5
+
 # Dry run to inspect prompts without calling the LLM
 ict-agent --task uniopbench --operators norm/rmsnorm optimize --rounds 2 --dry-run
 ```
@@ -92,29 +95,37 @@ ict-agent --task uniopbench --operators norm/rmsnorm optimize --rounds 2 --dry-r
 For each operator:
 1. Copies operator scaffold into a fresh `artifact/` directory
 2. If `--ref-impl` is given, copies it as `v0_baseline.cu` (not counted as a round)
-3. Runs up to `--rounds` agent sessions:
+3. Runs up to `--rounds` agent sessions (pass@k context restarts):
    - Round 1 without ref-impl: uses the generation prompt (`TASK.md`) to create the kernel from scratch
    - Subsequent rounds: uses the optimization prompt (`OPTIMIZE_TASK.md`)
-4. Each round's kernel is saved as a versioned snapshot in `versions/`
-5. If correctness breaks, the kernel is reverted to the last good version
-6. Early-stops when `--target-speedup` is met
-7. Selects the best-performing version and copies it back to `artifact/cuda_/kernel.cu`
+4. **Two-layer limits**: `--rounds` = max context restarts (pass@k); `--max-version` = max number of versions before give-up when target not met (default: same as `--rounds`). Optimization stops as soon as the manifest has `max_version` versions (including intermediate attempts).
+5. Each round's kernel is saved as a versioned snapshot in `versions/`
+6. **Intermediate versions**: The agent is instructed to save each passing kernel (correctness + perf) to `versions/round_N_attempt_M.cu` before making further edits. All such versions are collected and added to the manifest.
+7. If correctness breaks, the kernel is reverted to the last good version
+8. Early-stops when `--target-speedup` is met
+9. **Give-up**: When the manifest reaches `--max-version` versions without meeting target, optimization stops and `optimization_summary.md` is written with version history and performance comparison.
+10. Selects the best-performing version and copies it back to `artifact/cuda_/kernel.cu`
 
 ### Kernel versioning
 
-Each operator tracks versions in `versions/manifest.json`:
+Each operator tracks versions in `versions/manifest.json`. All versions that pass correctness and can run perf (even if below target) are saved:
 
 ```json
 {
   "versions": [
     {"version": "v0_baseline", "file": "v0_baseline.cu", "speedup": null, "source": "ref_impl"},
-    {"version": "v1_opt", "file": "v1_opt.cu", "speedup": 1.34, "source": "round_1", "correctness": true}
+    {"version": "v1_opt", "file": "v1_opt.cu", "speedup": 0.19, "source": "round_1", "correctness": true},
+    {"version": "v2_attempt_1", "file": "v2_attempt_1.cu", "speedup": 0.42, "source": "round_2", "correctness": true},
+    {"version": "v2_attempt_2", "file": "v2_attempt_2.cu", "speedup": 0.66, "source": "round_2", "correctness": true},
+    {"version": "v2_opt", "file": "v2_opt.cu", "speedup": 0.66, "source": "round_2", "correctness": true}
   ],
-  "best": "v1_opt",
-  "best_speedup": 1.34,
-  "target_speedup": 1.0
+  "best": "v2_attempt_2",
+  "best_speedup": 0.66,
+  "target_speedup": 0.8
 }
 ```
+
+When target is not met and the manifest reaches `--max-version` versions, `optimization_summary.md` is written with a give-up report (version history table and best version).
 
 ## Execution Model
 
@@ -169,7 +180,10 @@ The `experiment.name` comes from `task.yaml` (e.g. `a100_uniopbench_v1`). Each r
         manifest.json
         v0_baseline.cu
         v1_initial.cu / v1_opt.cu
+        v2_attempt_1.cu       # intermediate (when agent saves)
+        v2_attempt_2.cu
         v2_opt.cu
+        optimization_summary.md  # when target not met
       artifact/
         ...
       result.json

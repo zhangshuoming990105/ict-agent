@@ -71,7 +71,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--rounds",
         type=int,
         default=3,
-        help="Max optimization rounds per operator (default: 3)",
+        help="Max optimization rounds (pass@k context restarts) per operator (default: 3)",
+    )
+    opt_parser.add_argument(
+        "--max-version",
+        type=int,
+        default=None,
+        help="Max versioning rounds before give-up when target not met (default: same as --rounds)",
     )
     opt_parser.add_argument(
         "--target-speedup",
@@ -123,7 +129,7 @@ def _normalize_argv(argv: list[str]) -> list[str]:
             # Flags that consume next arg as value
             if "=" not in arg and arg in {
                 "--config", "--run-id", "--operators", "--rounds",
-                "--target-speedup", "--ref-impl", "--task",
+                "--max-version", "--target-speedup", "--ref-impl", "--task",
             }:
                 skip_next = True
             continue

@@ -24,7 +24,7 @@ SUPPORTED_PROVIDERS = ("auto", "ksyun", "infini")
 
 # Models that use the Anthropic Messages API (with prompt caching support).
 # All other models use the OpenAI Chat Completions API.
-ANTHROPIC_MODELS = frozenset({"mco-4", "mcs-1"})
+ANTHROPIC_MODELS = frozenset({"mco-4", "mcs-1", "mch-1", "mcs-5"})
 
 # Keep legacy name for any external references
 KSYUN_BASE_URL = KSYUN_OPENAI_BASE_URL
@@ -34,7 +34,7 @@ def get_provider_help_text() -> str:
     return (
         "Available providers:\n"
         "  - ksyun  (default model: mco-4, env: KSYUN_API_KEY)\n"
-        "    Claude models (mco-4, mcs-1): Anthropic Messages API with prompt caching\n"
+        "    Claude models (mco-4, mcs-1, mch-1): Anthropic Messages API with prompt caching\n"
         "    Other models (gpt-oss-120b, etc.): OpenAI Chat Completions API\n"
         "  - infini (default model: deepseek-v3, env: INFINI_API_KEY)\n"
         "  - auto   (prefer ksyun, fall back to infini)"

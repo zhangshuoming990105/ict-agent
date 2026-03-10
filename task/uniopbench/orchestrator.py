@@ -99,6 +99,8 @@ class ExperimentConfig:
     max_agent_steps: int | None = 0  # 0 = unlimited; None = use formula max(8, max_repair_rounds*4)
     cuda_arch: str = "sm_80"
     enable_torch_compile_baseline: bool = True
+    task_template: str = ""      # relative path from repo root; overrides TASK.md
+    optimize_template: str = ""  # relative path from repo root; overrides OPTIMIZE_TASK.md
 
 
 @dataclass
@@ -198,6 +200,8 @@ def load_task_config(config_path: Path, operators_override: list[str] | None = N
             enable_torch_compile_baseline=bool(
                 experiment_raw.get("enable_torch_compile_baseline", True)
             ),
+            task_template=str(experiment_raw.get("task_template") or ""),
+            optimize_template=str(experiment_raw.get("optimize_template") or ""),
         ),
         operators=normalized_operators,
         prompt=PromptConfig(**(raw.get("prompt") or {})),
@@ -273,6 +277,7 @@ def build_prompt(
     prior_round: dict[str, Any] | None,
     artifact_rel_path: str = "",
     has_variants: bool = False,
+    opt_round: int | None = None,
 ) -> tuple[str, str]:
     system_parts = [
         "You are operating as the full ict-agent runtime inside an isolated UniOpBench operator workspace.",
@@ -290,8 +295,11 @@ def build_prompt(
         system_parts.append(
             "The workspace root is the operator artifact directory. Run test.py commands directly from the workspace."
         )
-    if task_config.prompt.use_task_template and task_template_path().is_file():
-        system_parts.append(task_template_path().read_text(encoding="utf-8"))
+    if task_config.prompt.use_task_template:
+        custom = task_config.experiment.task_template
+        tmpl_path = (repo_root() / custom) if custom else task_template_path()
+        if tmpl_path.is_file():
+            system_parts.append(tmpl_path.read_text(encoding="utf-8"))
     if task_config.prompt.extra_system:
         system_parts.append(task_config.prompt.extra_system)
 
@@ -315,6 +323,13 @@ def build_prompt(
         "run `python test.py` once for perf, then STOP and reply with a short summary. "
         "Do NOT keep optimizing after correctness passes.",
     )
+    if opt_round is not None:
+        user_parts.append(
+            "**Versioning**: After each successful test.py run (correctness + performance), "
+            f"before making further edits, save the current kernel: "
+            f"`mkdir -p versions && cp cuda_/kernel.cu versions/round_{opt_round}_attempt_M.cu` "
+            "with M=1, 2, 3, ... for each distinct passing version in this round.",
+        )
     for path in prompt_file_list(operator_dir):
         rel = path.relative_to(operator_dir)
         lang = path.suffix.lstrip(".") or "text"
@@ -905,10 +920,101 @@ def run_uniopbench_task(args) -> int:
 # ---------------------------------------------------------------------------
 
 
+def write_optimization_summary(
+    op_dir: Path,
+    operator: str,
+    manifest: dict[str, Any],
+    target_speedup: float,
+    max_version: int,
+    result: dict[str, Any],
+    logger: Logger,
+) -> None:
+    """Write optimization_summary.md when target was not met (give-up report)."""
+    lines = [
+        f"# Optimization Summary: {operator}",
+        "",
+        f"**Target speedup**: {target_speedup:.2f}x",
+        f"**Best achieved**: {manifest.get('best_speedup', 'N/A')}x"
+        + (f" ({manifest.get('best', 'N/A')})" if manifest.get("best") else ""),
+        f"**Rounds attempted**: {result.get('rounds_attempted', 0)}",
+        f"**Max versions (give-up limit)**: {max_version}",
+        "",
+        "## Version History (all correctness+perf passing versions)",
+        "",
+        "| Version | Speedup | Source |",
+        "|---------|---------|--------|",
+    ]
+    for v in manifest.get("versions", []):
+        if v.get("correctness"):
+            sp = v.get("speedup")
+            sp_str = f"{sp:.2f}x" if sp is not None else "N/A"
+            lines.append(f"| {v.get('version', '')} | {sp_str} | {v.get('source', '')} |")
+    lines.extend([
+        "",
+        "## Best Version",
+        "",
+        f"Selected: **{manifest.get('best', 'none')}** "
+        f"(speedup={manifest.get('best_speedup', 'N/A')}x)",
+        "",
+        "---",
+        "",
+        f"*Target not met. Optimization stopped after {max_version} versions.*",
+    ])
+    summary_path = op_dir / "optimization_summary.md"
+    write_text(summary_path, "\n".join(lines))
+    logger.log(f"  [summary] wrote {summary_path}")
+
+
 def extract_speedup(text: str) -> float | None:
     """Extract the last Speedup value from test output text."""
     matches = re.findall(r"Speedup:\s+(\d+\.?\d*)x", text)
     return float(matches[-1]) if matches else None
+
+
+def parse_all_intermediate_perf_results(trajectory_path: Path) -> list[dict[str, Any]]:
+    """Parse trajectory for ALL successful full test.py runs (correctness + perf passed).
+
+    Returns a list of dicts with keys: speedup, perf_log, in chronological order.
+    Use this to collect all intermediate versions that passed compile + correctness + perf.
+    """
+    if not trajectory_path.is_file():
+        return []
+    text = trajectory_path.read_text(encoding="utf-8", errors="replace")
+    blocks = _extract_tool_blocks(text)
+
+    results: list[dict[str, Any]] = []
+    for block in blocks:
+        cmd_match = re.search(r"command=(.+)", block)
+        if not cmd_match:
+            continue
+        cmd = cmd_match.group(1).strip()
+        if "test.py" not in cmd:
+            continue
+
+        has_passed = "\N{WHITE HEAVY CHECK MARK} STATUS: PASSED" in block or "STATUS: PASSED" in block
+        has_failed = "\N{CROSS MARK} STATUS: FAILED" in block or "STATUS: FAILED" in block
+
+        is_compile_only = "--compile-only" in cmd
+        is_no_perf = "--no-perf" in cmd and not is_compile_only
+        is_variants = "--variants" in cmd
+        is_full_run = (
+            not is_compile_only
+            and not is_no_perf
+            and not is_variants
+            and re.search(r"python\s+test\.py\s*($|[^-]|2>&1|\|)", cmd)
+        )
+
+        if not is_full_run:
+            continue
+        if not has_passed or has_failed:
+            continue
+
+        cmd_line_idx = block.find("command=")
+        output_text = block[cmd_line_idx:] if cmd_line_idx >= 0 else block
+        speedup = extract_speedup(output_text)
+        if speedup is not None:
+            results.append({"speedup": speedup, "perf_log": output_text})
+    return results
 
 
 def build_optimize_prompt(
@@ -928,7 +1034,8 @@ def build_optimize_prompt(
         "Do not modify any file other than cuda_/kernel.cu.",
         "The workspace root is the operator artifact directory.",
     ]
-    tmpl = optimize_template_path()
+    custom_opt = task_config.experiment.optimize_template
+    tmpl = (repo_root() / custom_opt) if custom_opt else optimize_template_path()
     if tmpl.is_file():
         system_parts.append(tmpl.read_text(encoding="utf-8"))
 
@@ -952,6 +1059,12 @@ def build_optimize_prompt(
         f"Target speedup: {target_speedup:.2f}x. Current: {speedup_str}. "
         "When done, reply with a short summary of changes and the new speedup."
     )
+    user_parts.append(
+        "**Versioning**: After each successful test.py run (correctness + performance), "
+        f"before making further edits, save the current kernel: "
+        f"`mkdir -p versions && cp cuda_/kernel.cu versions/round_{opt_round}_attempt_M.cu` "
+        "with M=1, 2, 3, ... for each distinct passing version in this round."
+    )
 
     for path in prompt_file_list(operator_dir):
         rel = path.relative_to(operator_dir)
@@ -974,6 +1087,9 @@ def run_optimize_task(args) -> int:
     dry_run = getattr(args, "dry_run", False)
     target_speedup = float(args.target_speedup)
     max_rounds = int(args.rounds)
+    max_version = getattr(args, "max_version", None)
+    if max_version is None:
+        max_version = max_rounds
     ref_impl_path = Path(args.ref_impl).resolve() if getattr(args, "ref_impl", None) else None
 
     if ref_impl_path and not ref_impl_path.is_file():
@@ -988,7 +1104,7 @@ def run_optimize_task(args) -> int:
         summary: dict[str, Any] = {"operators": {}}
 
         logger.log(f"Optimize run: {run_id}")
-        logger.log(f"Rounds: {max_rounds}, Target speedup: {target_speedup}x")
+        logger.log(f"Rounds: {max_rounds}, Max versioning: {max_version}, Target speedup: {target_speedup}x")
         if ref_impl_path:
             logger.log(f"Reference impl: {ref_impl_path}")
 
@@ -1080,6 +1196,7 @@ def run_optimize_task(args) -> int:
                     system_prompt, user_prompt = build_prompt(
                         task_config, operator, source_dir, None,
                         has_variants=has_variants,
+                        opt_round=1,
                     )
                 else:
                     system_prompt, user_prompt = build_optimize_prompt(
@@ -1098,15 +1215,20 @@ def run_optimize_task(args) -> int:
                 continue
 
             # --- Optimization rounds ---
-            for round_idx in range(1, max_rounds + 1):
+            round_idx = 0
+            while round_idx < max_rounds:
+                round_idx += 1
                 round_dir = rounds_dir / f"round_{round_idx}"
                 round_dir.mkdir(parents=True, exist_ok=True)
+                # Create artifact/versions/ so agent can save intermediate kernels
+                (artifact_dir / "versions").mkdir(parents=True, exist_ok=True)
 
                 if current_kernel is None:
                     # From scratch: use generation prompt (TASK.md)
                     system_prompt, user_prompt = build_prompt(
                         task_config, operator, source_dir, None,
                         has_variants=has_variants,
+                        opt_round=round_idx,
                     )
                     version_suffix = "initial"
                 else:
@@ -1181,27 +1303,86 @@ def run_optimize_task(args) -> int:
                     else:
                         logger.log(f"  [round_{round_idx}] initial generation failed correctness")
 
-                # Save version
-                version_name = f"v{round_idx}_{version_suffix}"
-                version_file = f"{version_name}.cu"
-                write_text(versions_dir / version_file, new_kernel)
-                manifest["versions"].append({
-                    "version": version_name,
-                    "file": version_file,
-                    "speedup": round_speedup,
-                    "source": f"round_{round_idx}",
-                    "correctness": round_correctness,
-                })
+                # Collect intermediate versions (agent-saved kernels that passed correctness+perf)
+                give_up_versions = False
+                intermediate_perfs = parse_all_intermediate_perf_results(round_dir / "trajectory.log")
+                artifact_versions_dir = artifact_dir / "versions"
+                if artifact_versions_dir.is_dir():
+                    saved_files = sorted(
+                        artifact_versions_dir.glob(f"round_{round_idx}_attempt_*.cu"),
+                        key=lambda p: p.name,
+                    )
+                    for idx, saved_path in enumerate(saved_files):
+                        if idx < len(intermediate_perfs):
+                            speedup_val = intermediate_perfs[idx]["speedup"]
+                        else:
+                            speedup_val = None
+                        attempt_num = idx + 1
+                        v_name = f"v{round_idx}_attempt_{attempt_num}"
+                        v_file = f"{v_name}.cu"
+                        kernel_content = saved_path.read_text(encoding="utf-8", errors="replace")
+                        write_text(versions_dir / v_file, kernel_content)
+                        manifest["versions"].append({
+                            "version": v_name,
+                            "file": v_file,
+                            "speedup": speedup_val,
+                            "source": f"round_{round_idx}",
+                            "correctness": True,  # Agent only saves after pass
+                        })
+                        if speedup_val is not None and (
+                            manifest["best_speedup"] is None
+                            or speedup_val > manifest["best_speedup"]
+                        ):
+                            manifest["best"] = v_name
+                            manifest["best_speedup"] = speedup_val
+                        logger.log(
+                            f"  [round_{round_idx}] intermediate v{round_idx}_attempt_{attempt_num} "
+                            f"speedup={speedup_val}"
+                        )
+                        if len(manifest["versions"]) >= max_version:
+                            give_up_versions = True
+                            break
 
-                logger.log(
-                    f"  [round_{round_idx}] {version_suffix} speedup={round_speedup} "
-                    f"correctness={round_correctness} (was {current_speedup})"
+                # Save final version for this round only when it adds value:
+                # - round passed correctness, or
+                # - kernel actually changed (avoid duplicate when round fails early, e.g. API 429)
+                kernel_unchanged = (
+                    current_kernel is not None
+                    and new_kernel == current_kernel
                 )
+                skip_version_save = (
+                    not round_correctness and kernel_unchanged
+                ) or give_up_versions
+                if not skip_version_save:
+                    version_name = f"v{round_idx}_{version_suffix}"
+                    version_file = f"{version_name}.cu"
+                    write_text(versions_dir / version_file, new_kernel)
+                    manifest["versions"].append({
+                        "version": version_name,
+                        "file": version_file,
+                        "speedup": round_speedup,
+                        "source": f"round_{round_idx}",
+                        "correctness": round_correctness,
+                    })
+                    logger.log(
+                        f"  [round_{round_idx}] {version_suffix} speedup={round_speedup} "
+                        f"correctness={round_correctness} (was {current_speedup})"
+                    )
+                else:
+                    logger.log(
+                        f"  [round_{round_idx}] skipped version save "
+                        f"(round failed/agent never started, kernel unchanged)"
+                    )
 
-                # Update best (only if correctness passed)
-                if round_correctness and round_speedup is not None and (
-                    manifest["best_speedup"] is None
-                    or round_speedup > manifest["best_speedup"]
+                # Update best (only if correctness passed and we saved a version)
+                if (
+                    not skip_version_save
+                    and round_correctness
+                    and round_speedup is not None
+                    and (
+                        manifest["best_speedup"] is None
+                        or round_speedup > manifest["best_speedup"]
+                    )
                 ):
                     manifest["best"] = version_name
                     manifest["best_speedup"] = round_speedup
@@ -1218,6 +1399,12 @@ def run_optimize_task(args) -> int:
                     logger.log(
                         f"  [round_{round_idx}] target met "
                         f"({round_speedup:.2f}x >= {target_speedup:.2f}x)"
+                    )
+                    break
+                elif len(manifest["versions"]) >= max_version:
+                    logger.log(
+                        f"  [round_{round_idx}] giving up after {max_version} versions "
+                        f"(target {target_speedup:.2f}x not met)"
                     )
                     break
 
@@ -1241,6 +1428,7 @@ def run_optimize_task(args) -> int:
             result["optimization"] = {
                 "ref_impl": str(ref_impl_path) if ref_impl_path else None,
                 "rounds_total": result["rounds_attempted"],
+                "max_version": max_version,
                 "best_version": manifest["best"],
                 "best_speedup": manifest["best_speedup"],
                 "target_speedup": target_speedup,
@@ -1254,6 +1442,12 @@ def run_optimize_task(args) -> int:
             summary["operators"][operator_key] = result
             write_json(op_dir / "result.json", result)
             write_json(run_dir / "run_summary.json", summary)
+
+            # Write optimization summary when target not met (give-up report)
+            if not result.get("optimization", {}).get("target_met", False):
+                write_optimization_summary(
+                    op_dir, operator, manifest, target_speedup, max_version, result, logger
+                )
 
         # --- Final summary ---
         ops = summary.get("operators", {})
