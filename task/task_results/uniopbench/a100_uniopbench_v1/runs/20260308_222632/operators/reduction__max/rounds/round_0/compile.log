@@ -1,9 +1,0 @@
-
-================================================================================
-Testing Max operator with CUDA backend
-Input shape: (16, 32, 32), Output shape: (32, 32)
-================================================================================
-
-Loading CUDA kernel...
-✅ CUDA kernel is up to date
-✓ CUDA kernel loaded

@@ -1,8 +1,0 @@
-
-================================================================================
-Testing Causal Softmax operator with CUDA backend (single test mode)
-Shape: (8, 16), Elements: 128
-Dtype: torch.float32
-================================================================================
-
-✅ CUDA kernel is up to date

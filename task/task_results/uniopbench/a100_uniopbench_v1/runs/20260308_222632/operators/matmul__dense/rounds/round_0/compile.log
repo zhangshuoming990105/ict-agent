@@ -1,9 +1,0 @@
-
-================================================================================
-Testing Dense operator with CUDA backend
-a: (64, 768), b: (768, 768), bias: (768,), output: (64, 768)
-================================================================================
-
-Loading CUDA kernel...
-✅ CUDA kernel is up to date
-✓ CUDA kernel loaded

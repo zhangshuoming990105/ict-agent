@@ -1,9 +1,0 @@
-================================================================================
-Testing Scatter operator with CUDA backend
-Shape: (8, 768, 1, 1)
-================================================================================
-
-Loading CUDA kernel...
-🔧 Compiling CUDA kernel...
-✅ CUDA kernel compiled successfully: /data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/other__scatter/artifact/cuda_/lib_cuda_kernel.so
-✓ CUDA kernel loaded

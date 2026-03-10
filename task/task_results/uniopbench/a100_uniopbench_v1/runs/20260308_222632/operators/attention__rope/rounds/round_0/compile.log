@@ -1,9 +1,0 @@
-
-================================================================================
-Testing Rope operator with CUDA backend (single test mode)
-Shape: (2048, 128)
-================================================================================
-
-Loading CUDA kernel...
-✅ CUDA kernel is up to date
-✓ CUDA kernel loaded

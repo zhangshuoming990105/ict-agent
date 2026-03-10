@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from queue import Empty, Queue
 import re
 import threading
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 from ict_agent.commands.common import do_compact, format_turn_usage
 from ict_agent.commands.registry import CommandContext
-from ict_agent.context import ContextManager
+from ict_agent.context import ContextManager, TokenUsage
 from ict_agent.domains.cuda.recovery import (
     RecoveryState,
     ToolExecutionOutcome,
@@ -273,29 +273,20 @@ def _openai_messages_to_anthropic(
     text content blocks (with ``cache_control``) and *messages* is the
     Anthropic ``messages`` parameter.
 
-    Cache breakpoints:
-    - Only the first system prompt block gets ``cache_control`` (stable across
-      turns and keeps total cache-control blocks within Anthropic's limit).
+    Cache breakpoints (subject to provider limit, e.g. Bedrock max 4 blocks):
+    - System prompt gets ``cache_control`` (single merged block for compatibility).
     - The last user/tool-result message gets ``cache_control`` (caches the
       entire conversation prefix up to the current turn).
     """
     system_parts: list[str] = []
     messages: list[dict] = []
 
-    system_block_index = 0
     for msg in openai_messages:
         role = msg.get("role")
         content = msg.get("content", "") or ""
 
         if role == "system":
-            block = {
-                "type": "text",
-                "text": content,
-            }
-            if system_block_index == 0:
-                block["cache_control"] = _CACHE_CTRL
-            system_blocks.append(block)
-            system_block_index += 1
+            system_parts.append(content)
 
         elif role == "user":
             messages.append({"role": "user", "content": content})
@@ -1059,20 +1050,17 @@ class BatchTurnResult:
     had_failure: bool
     error: str | None = None
     ctx_messages: list[dict] | None = None
-    token_usage: dict[str, int] | None = None
+    token_usage: TokenUsage = field(default_factory=TokenUsage)
 
 
-def _token_usage_from_ctx(ctx: ContextManager) -> dict[str, int]:
-    usage = {
-        "prompt_tokens": ctx.stats.total_prompt_tokens,
-        "completion_tokens": ctx.stats.total_completion_tokens,
-        "total_tokens": ctx.stats.total_tokens,
-    }
-    if ctx.stats.total_cache_read_tokens:
-        usage["cache_read_tokens"] = ctx.stats.total_cache_read_tokens
-    if ctx.stats.total_cache_write_tokens:
-        usage["cache_write_tokens"] = ctx.stats.total_cache_write_tokens
-    return usage
+def _token_usage_from_ctx(ctx: ContextManager) -> TokenUsage:
+    return TokenUsage(
+        prompt_tokens=ctx.stats.total_prompt_tokens,
+        completion_tokens=ctx.stats.total_completion_tokens,
+        total_tokens=ctx.stats.total_tokens,
+        cache_read_tokens=ctx.stats.total_cache_read_tokens,
+        cache_write_tokens=ctx.stats.total_cache_write_tokens,
+    )
 
 
 def _run_single_turn(
@@ -1541,4 +1529,3 @@ def chat(
         reader_stop_event.set()
         reader_thread.join(timeout=1.0)
     return None
-

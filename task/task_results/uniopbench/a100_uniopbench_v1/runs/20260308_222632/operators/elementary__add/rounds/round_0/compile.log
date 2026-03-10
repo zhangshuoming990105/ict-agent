@@ -1,9 +1,0 @@
-
-================================================================================
-Testing Add operator with CUDA backend (single test mode)
-Shape: (2048, 2048), Elements: 4,194,304
-================================================================================
-
-Loading CUDA kernel...
-✅ CUDA kernel is up to date
-✓ CUDA kernel loaded
