@@ -342,7 +342,7 @@ def main() -> int:
         model=model,
         max_tokens=args.max_tokens,
         max_agent_steps=max(1, args.max_agent_steps),
-        safe_shell=False,
+        safe_shell=args.safe_shell,
         recovery_cleanup=not args.keep_recovery_trace,
         preempt_shell_kill=args.preempt_shell_kill,
         compact_model=compact_model,
