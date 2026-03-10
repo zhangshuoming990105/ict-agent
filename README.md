@@ -109,6 +109,19 @@ Cache stats are displayed in turn usage:
 
 ## (Optional) UniOpBench
 
+UniOpBench is a CUDA operator benchmark that can be run directly via `ict-agent`:
+
 ```bash
 cd benchmarks/UniOpBench && pip install -e .
+
+# Generate kernels (correctness-focused)
+ict-agent --task uniopbench --operators norm/rmsnorm
+
+# Optimize kernels (iterative performance improvement)
+ict-agent --task uniopbench --operators norm/rmsnorm optimize --rounds 3 --target-speedup 1.5
+
+# Optimize from a reference kernel
+ict-agent --task uniopbench --operators norm/rmsnorm optimize --ref-impl path/to/kernel.cu
 ```
+
+See [`task/uniopbench/README.md`](task/uniopbench/README.md) for full configuration and output layout.

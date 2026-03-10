@@ -14,6 +14,21 @@ ict-agent --safe-shell                      # shell command approval
 ict-agent --sandbox                         # process-level sandbox
 ```
 
+### Task Orchestration
+
+`ict-agent --task uniopbench` delegates to the task-specific CLI at `task/uniopbench/cli.py`. See [`task/uniopbench/README.md`](task/uniopbench/README.md) for details.
+
+```bash
+# Correctness-focused kernel generation
+ict-agent --task uniopbench --operators norm/rmsnorm
+
+# Self-contained optimization (generate + iteratively optimize)
+ict-agent --task uniopbench --operators norm/rmsnorm optimize --rounds 3 --target-speedup 1.5
+
+# Optimize from a reference kernel (v0 baseline, not counted as a round)
+ict-agent --task uniopbench --operators norm/rmsnorm optimize --ref-impl path/to/kernel.cu
+```
+
 The `ict-agent` command is registered via `[project.scripts]` in pyproject.toml; use `python main.py` if not installed.
 
 ### System Prompt & Input (Claude Code style)

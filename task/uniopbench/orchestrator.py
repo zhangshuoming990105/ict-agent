@@ -34,6 +34,10 @@ def task_template_path() -> Path:
     return repo_root() / "task" / "uniopbench" / "TASK.md"
 
 
+def optimize_template_path() -> Path:
+    return repo_root() / "task" / "uniopbench" / "OPTIMIZE_TASK.md"
+
+
 def experiment_dir(experiment_name: str) -> Path:
     """Return experiment directory (task_results/uniopbench/<experiment.name>)."""
     return repo_root() / "task" / "task_results" / "uniopbench" / experiment_name
@@ -211,6 +215,19 @@ def operator_source_dir(operator: str) -> Path:
     ]
     if not all(path.exists() for path in required):
         raise FileNotFoundError(f"Invalid UniOpBench operator: {operator}")
+    return op_dir
+
+
+def operator_scaffold_dir(operator: str) -> Path:
+    """Like operator_source_dir but does NOT require cuda_/kernel.cu to exist."""
+    op_dir = benchmark_root() / "operators" / operator
+    required = [
+        op_dir / "test.py",
+        op_dir / "cases.yaml",
+        op_dir / "torch_" / "ref.py",
+    ]
+    if not all(path.exists() for path in required):
+        raise FileNotFoundError(f"Invalid UniOpBench operator scaffold: {operator}")
     return op_dir
 
 
@@ -879,5 +896,383 @@ def run_uniopbench_task(args) -> int:
         if failed_list:
             logger.log(f"Failed: {', '.join(failed_list)}")
         return 1 if overall_failed else 0
+    finally:
+        logger.close()
+
+
+# ---------------------------------------------------------------------------
+# Optimization subcommand
+# ---------------------------------------------------------------------------
+
+
+def extract_speedup(text: str) -> float | None:
+    """Extract the last Speedup value from test output text."""
+    matches = re.findall(r"Speedup:\s+(\d+\.?\d*)x", text)
+    return float(matches[-1]) if matches else None
+
+
+def build_optimize_prompt(
+    task_config: TaskConfig,
+    operator: str,
+    operator_dir: Path,
+    kernel_source: str,
+    current_speedup: float | None,
+    target_speedup: float,
+    opt_round: int,
+    has_variants: bool = False,
+) -> tuple[str, str]:
+    """Build system + user prompt for an optimization round."""
+    system_parts = [
+        "You are operating as the full ict-agent runtime inside an isolated UniOpBench operator workspace.",
+        "Use tools to inspect and edit cuda_/kernel.cu, then run test.py to validate.",
+        "Do not modify any file other than cuda_/kernel.cu.",
+        "The workspace root is the operator artifact directory.",
+    ]
+    tmpl = optimize_template_path()
+    if tmpl.is_file():
+        system_parts.append(tmpl.read_text(encoding="utf-8"))
+
+    speedup_str = f"{current_speedup:.2f}x" if current_speedup is not None else "unknown"
+    user_parts = [
+        f"Operator: {operator}",
+        f"Target GPU architecture: {task_config.experiment.cuda_arch}",
+        f"Optimization round: {opt_round}",
+        f"Current speedup: {speedup_str}  (target: {target_speedup:.2f}x)",
+        "",
+        "## Current kernel (cuda_/kernel.cu)",
+        f"```cuda\n{kernel_source}\n```",
+        "",
+        "Optimize the kernel to improve performance.",
+        "After editing, verify correctness: `python test.py --no-perf`",
+        "Then measure performance: `python test.py`",
+    ]
+    if has_variants:
+        user_parts.append("Also run variants: `python test.py --variants yaml --no-perf`")
+    user_parts.append(
+        f"Target speedup: {target_speedup:.2f}x. Current: {speedup_str}. "
+        "When done, reply with a short summary of changes and the new speedup."
+    )
+
+    for path in prompt_file_list(operator_dir):
+        rel = path.relative_to(operator_dir)
+        lang = path.suffix.lstrip(".") or "text"
+        user_parts.append(
+            f"\n## File: {rel}\n```{lang}\n{path.read_text(encoding='utf-8', errors='replace')}\n```"
+        )
+
+    return "\n\n".join(system_parts), "\n".join(user_parts)
+
+
+def run_optimize_task(args) -> int:
+    """Self-contained optimize: generate from scratch or from ref-impl, then iteratively optimize."""
+    config_path = Path(args.config).resolve() if args.config else task_config_path()
+    task_config = load_task_config(
+        config_path,
+        operators_override=args.operators.split(",") if args.operators else None,
+    )
+    no_truncate = getattr(args, "no_truncate", False)
+    dry_run = getattr(args, "dry_run", False)
+    target_speedup = float(args.target_speedup)
+    max_rounds = int(args.rounds)
+    ref_impl_path = Path(args.ref_impl).resolve() if getattr(args, "ref_impl", None) else None
+
+    if ref_impl_path and not ref_impl_path.is_file():
+        raise FileNotFoundError(f"Reference implementation not found: {ref_impl_path}")
+
+    run_id = args.run_id or timestamp_run_id()
+    run_dir = runs_root(task_config.experiment.name) / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    logger = Logger(run_dir / "console.log")
+    try:
+        summary: dict[str, Any] = {"operators": {}}
+
+        logger.log(f"Optimize run: {run_id}")
+        logger.log(f"Rounds: {max_rounds}, Target speedup: {target_speedup}x")
+        if ref_impl_path:
+            logger.log(f"Reference impl: {ref_impl_path}")
+
+        for operator in task_config.operators:
+            operator_key = safe_operator_name(operator)
+            source_dir = operator_scaffold_dir(operator)
+            has_variants = supports_variants(source_dir / "test.py")
+
+            op_dir = run_dir / "operators" / operator_key
+            artifact_dir = op_dir / "artifact"
+            prompt_dir = op_dir / "prompt"
+            rounds_dir = op_dir / "rounds"
+            versions_dir = op_dir / "versions"
+            prompt_dir.mkdir(parents=True, exist_ok=True)
+            rounds_dir.mkdir(parents=True, exist_ok=True)
+            versions_dir.mkdir(parents=True, exist_ok=True)
+
+            copy_operator_tree(source_dir, artifact_dir)
+
+            result: dict[str, Any] = {
+                "operator": operator,
+                "operator_key": operator_key,
+                "status": "pending",
+                "rounds_attempted": 0,
+                "agent_steps_per_round": [],
+                "agent_steps_total": 0,
+                "tokens": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                    "rounds": [],
+                },
+                "verify": {"passed": False, "log": ""},
+                "perf": {"passed": False, "log": ""},
+                "variants": {"executed": False, "passed": None, "log": ""},
+                "final_kernel": "artifact/cuda_/kernel.cu",
+                "supports_variants": has_variants,
+            }
+
+            kernel_path = artifact_dir / "cuda_" / "kernel.cu"
+            current_kernel: str | None = None
+            current_speedup: float | None = None
+
+            manifest: dict[str, Any] = {
+                "versions": [],
+                "best": None,
+                "best_speedup": None,
+                "target_speedup": target_speedup,
+            }
+
+            # --- v0 baseline from ref-impl ---
+            if ref_impl_path:
+                ref_kernel = ref_impl_path.read_text(encoding="utf-8", errors="replace")
+                kernel_path.parent.mkdir(parents=True, exist_ok=True)
+                write_text(kernel_path, ref_kernel)
+                write_text(versions_dir / "v0_baseline.cu", ref_kernel)
+
+                if not dry_run:
+                    # Record ref-impl as v0 baseline.
+                    # We do NOT run external verification here because the subprocess
+                    # may lack env vars the agent discovers (e.g. LD_LIBRARY_PATH on
+                    # non-NV GPUs).  The first agent round will verify and measure perf.
+                    current_kernel = ref_kernel
+                    current_speedup = None
+                    manifest["versions"].append({
+                        "version": "v0_baseline",
+                        "file": "v0_baseline.cu",
+                        "speedup": None,
+                        "source": "ref_impl",
+                    })
+                    manifest["best"] = "v0_baseline"
+                    manifest["best_speedup"] = None
+                    logger.log(
+                        f"[v0] {operator}: ref-impl loaded as baseline (perf will be measured by agent)"
+                    )
+                else:
+                    # dry-run: just record the ref-impl
+                    manifest["versions"].append({
+                        "version": "v0_baseline",
+                        "file": "v0_baseline.cu",
+                        "speedup": None,
+                        "source": "ref_impl",
+                    })
+                    current_kernel = ref_kernel
+
+            if dry_run:
+                # Build first round prompt for inspection
+                if current_kernel is None:
+                    system_prompt, user_prompt = build_prompt(
+                        task_config, operator, source_dir, None,
+                        has_variants=has_variants,
+                    )
+                else:
+                    system_prompt, user_prompt = build_optimize_prompt(
+                        task_config, operator, source_dir,
+                        current_kernel, current_speedup, target_speedup,
+                        1, has_variants=has_variants,
+                    )
+                write_text(prompt_dir / "system.txt", system_prompt)
+                write_text(prompt_dir / "user.txt", user_prompt)
+                write_json(versions_dir / "manifest.json", manifest)
+                result["status"] = "dry_run"
+                summary["operators"][operator_key] = result
+                write_json(op_dir / "result.json", result)
+                write_json(run_dir / "run_summary.json", summary)
+                logger.log(f"[dry-run] prepared {operator}")
+                continue
+
+            # --- Optimization rounds ---
+            for round_idx in range(1, max_rounds + 1):
+                round_dir = rounds_dir / f"round_{round_idx}"
+                round_dir.mkdir(parents=True, exist_ok=True)
+
+                if current_kernel is None:
+                    # From scratch: use generation prompt (TASK.md)
+                    system_prompt, user_prompt = build_prompt(
+                        task_config, operator, source_dir, None,
+                        has_variants=has_variants,
+                    )
+                    version_suffix = "initial"
+                else:
+                    # Optimize existing kernel
+                    system_prompt, user_prompt = build_optimize_prompt(
+                        task_config, operator, source_dir,
+                        current_kernel, current_speedup, target_speedup,
+                        round_idx, has_variants=has_variants,
+                    )
+                    version_suffix = "opt"
+
+                write_text(prompt_dir / "system.txt", system_prompt)
+                write_text(prompt_dir / "user.txt", user_prompt)
+
+                request_payload, response_payload = run_agent_round(
+                    task_config, artifact_dir, round_dir,
+                    system_prompt, user_prompt,
+                    no_truncate=no_truncate,
+                )
+                write_json(round_dir / "request.json", request_payload)
+                write_json(round_dir / "response.json", response_payload)
+
+                # Token accounting
+                usage = response_payload.get("token_usage") or {}
+                result["tokens"]["rounds"].append(usage)
+                result["tokens"]["prompt_tokens"] += usage.get("prompt_tokens", 0)
+                result["tokens"]["completion_tokens"] += usage.get("completion_tokens", 0)
+                result["tokens"]["total_tokens"] += usage.get("total_tokens", 0)
+
+                steps_this_round = response_payload.get("steps", 0)
+                result["agent_steps_per_round"].append(steps_this_round)
+                result["agent_steps_total"] = sum(result["agent_steps_per_round"])
+                result["rounds_attempted"] = round_idx
+
+                # Read the (possibly created/modified) kernel
+                new_kernel = ""
+                if kernel_path.is_file():
+                    new_kernel = kernel_path.read_text(encoding="utf-8", errors="replace")
+                write_text(round_dir / "extracted_kernel.cu", new_kernel)
+
+                # Parse results from agent trajectory
+                agent_tr = parse_agent_test_results(round_dir / "trajectory.log")
+                round_speedup: float | None = None
+                round_correctness = False
+
+                if agent_tr and agent_tr["verify_passed"]:
+                    round_correctness = True
+                    write_text(round_dir / "verify.log", agent_tr["verify_log"])
+                    result["verify"] = {"passed": True, "log": str(round_dir / "verify.log")}
+
+                    if agent_tr["perf_log"]:
+                        write_text(round_dir / "perf.log", agent_tr["perf_log"])
+                        round_speedup = extract_speedup(agent_tr["perf_log"])
+                        result["perf"] = {
+                            "passed": agent_tr["perf_passed"],
+                            "log": str(round_dir / "perf.log"),
+                        }
+
+                    if agent_tr["variants_passed"] is not None:
+                        write_text(round_dir / "variants.log", agent_tr["variants_log"])
+                        result["variants"] = {
+                            "executed": True,
+                            "passed": agent_tr["variants_passed"],
+                            "log": str(round_dir / "variants.log"),
+                        }
+                elif new_kernel:
+                    # Agent didn't pass correctness — revert if we had a prior good kernel
+                    if current_kernel is not None:
+                        logger.log(f"  [round_{round_idx}] correctness failed, reverting kernel")
+                        write_text(kernel_path, current_kernel)
+                        round_speedup = current_speedup
+                    else:
+                        logger.log(f"  [round_{round_idx}] initial generation failed correctness")
+
+                # Save version
+                version_name = f"v{round_idx}_{version_suffix}"
+                version_file = f"{version_name}.cu"
+                write_text(versions_dir / version_file, new_kernel)
+                manifest["versions"].append({
+                    "version": version_name,
+                    "file": version_file,
+                    "speedup": round_speedup,
+                    "source": f"round_{round_idx}",
+                    "correctness": round_correctness,
+                })
+
+                logger.log(
+                    f"  [round_{round_idx}] {version_suffix} speedup={round_speedup} "
+                    f"correctness={round_correctness} (was {current_speedup})"
+                )
+
+                # Update best (only if correctness passed)
+                if round_correctness and round_speedup is not None and (
+                    manifest["best_speedup"] is None
+                    or round_speedup > manifest["best_speedup"]
+                ):
+                    manifest["best"] = version_name
+                    manifest["best_speedup"] = round_speedup
+
+                # Update current for next round
+                if round_correctness and new_kernel:
+                    current_kernel = new_kernel
+                    current_speedup = round_speedup
+
+                write_json(versions_dir / "manifest.json", manifest)
+
+                # Early stop if target met
+                if round_speedup is not None and round_speedup >= target_speedup:
+                    logger.log(
+                        f"  [round_{round_idx}] target met "
+                        f"({round_speedup:.2f}x >= {target_speedup:.2f}x)"
+                    )
+                    break
+
+            # --- Select best version and copy back ---
+            if manifest["best"]:
+                best_file = versions_dir / f"{manifest['best']}.cu"
+                if best_file.is_file():
+                    best_kernel = best_file.read_text(encoding="utf-8", errors="replace")
+                    write_text(kernel_path, best_kernel)
+                    logger.log(
+                        f"[done] {operator}: best={manifest['best']} "
+                        f"(speedup={manifest['best_speedup']})"
+                    )
+                else:
+                    logger.log(f"[warn] {operator}: best version file not found: {best_file}")
+
+            # Determine overall status
+            has_correct = any(v.get("correctness") for v in manifest["versions"])
+            result["status"] = "passed" if has_correct else "failed"
+
+            result["optimization"] = {
+                "ref_impl": str(ref_impl_path) if ref_impl_path else None,
+                "rounds_total": result["rounds_attempted"],
+                "best_version": manifest["best"],
+                "best_speedup": manifest["best_speedup"],
+                "target_speedup": target_speedup,
+                "target_met": (
+                    manifest["best_speedup"] is not None
+                    and manifest["best_speedup"] >= target_speedup
+                ),
+            }
+
+            write_json(versions_dir / "manifest.json", manifest)
+            summary["operators"][operator_key] = result
+            write_json(op_dir / "result.json", result)
+            write_json(run_dir / "run_summary.json", summary)
+
+        # --- Final summary ---
+        ops = summary.get("operators", {})
+        total = len(ops)
+        passed = sum(1 for o in ops.values() if o.get("status") == "passed")
+        met_target = sum(
+            1 for o in ops.values()
+            if o.get("optimization", {}).get("target_met")
+        )
+        failed_list = [o.get("operator", k) for k, o in ops.items() if o.get("status") == "failed"]
+        summary["status"] = "passed" if not failed_list else "failed"
+        summary["success_rate"] = f"{passed}/{total}"
+        summary["failed"] = failed_list
+
+        write_json(run_dir / "run_summary.json", summary)
+        logger.log(f"\nSuccess rate: {summary['success_rate']}")
+        logger.log(f"Met target ({target_speedup}x): {met_target}/{total}")
+        if failed_list:
+            logger.log(f"Failed: {', '.join(failed_list)}")
+        return 0
     finally:
         logger.close()

@@ -14,6 +14,7 @@ It does not modify the upstream UniOpBench source tree. Instead, it:
 
 - [task.yaml](task.yaml): experiment config
 - [TASK.md](TASK.md): task prompt injected into the agent runtime
+- [OPTIMIZE_TASK.md](OPTIMIZE_TASK.md): task prompt for optimization rounds (perf-focused)
 - [orchestrator.py](orchestrator.py): benchmark runner implementation
 - [cli.py](cli.py): CLI argument parsing and entrypoint (invoked via `main.py --task uniopbench`)
 - [session_runner.py](session_runner.py): live-session bridge that boots the normal `chat()` runtime for one operator workspace
@@ -57,17 +58,62 @@ operators:
 From the repository root:
 
 ```bash
-python main.py --task uniopbench
+ict-agent --task uniopbench
 ```
 
 Useful variants:
 
 ```bash
-python main.py --task uniopbench --dry-run
-python main.py --task uniopbench --operators all
-python main.py --task uniopbench --run-id my_run
-python main.py --task uniopbench --resume --run-id my_run
-python main.py --task uniopbench --config task/uniopbench/task.yaml
+ict-agent --task uniopbench --operators all --dry-run
+ict-agent --task uniopbench --operators norm/rmsnorm
+ict-agent --task uniopbench --run-id my_run
+ict-agent --task uniopbench --resume --run-id my_run
+```
+
+## Optimize
+
+The `optimize` subcommand is a self-contained workflow for iterative kernel performance improvement. It does **not** require a prior `run` — it can generate a kernel from scratch or start from a reference implementation.
+
+```bash
+# From scratch: first round generates the kernel, subsequent rounds optimize
+ict-agent --task uniopbench --operators norm/rmsnorm optimize --rounds 3 --target-speedup 1.5
+
+# With a reference kernel (copied as v0 baseline, not counted as a round)
+ict-agent --task uniopbench --operators norm/rmsnorm optimize \
+  --rounds 3 --target-speedup 1.5 \
+  --ref-impl path/to/kernel.cu
+
+# Dry run to inspect prompts without calling the LLM
+ict-agent --task uniopbench --operators norm/rmsnorm optimize --rounds 2 --dry-run
+```
+
+### Optimize flow
+
+For each operator:
+1. Copies operator scaffold into a fresh `artifact/` directory
+2. If `--ref-impl` is given, copies it as `v0_baseline.cu` (not counted as a round)
+3. Runs up to `--rounds` agent sessions:
+   - Round 1 without ref-impl: uses the generation prompt (`TASK.md`) to create the kernel from scratch
+   - Subsequent rounds: uses the optimization prompt (`OPTIMIZE_TASK.md`)
+4. Each round's kernel is saved as a versioned snapshot in `versions/`
+5. If correctness breaks, the kernel is reverted to the last good version
+6. Early-stops when `--target-speedup` is met
+7. Selects the best-performing version and copies it back to `artifact/cuda_/kernel.cu`
+
+### Kernel versioning
+
+Each operator tracks versions in `versions/manifest.json`:
+
+```json
+{
+  "versions": [
+    {"version": "v0_baseline", "file": "v0_baseline.cu", "speedup": null, "source": "ref_impl"},
+    {"version": "v1_opt", "file": "v1_opt.cu", "speedup": 1.34, "source": "round_1", "correctness": true}
+  ],
+  "best": "v1_opt",
+  "best_speedup": 1.34,
+  "target_speedup": 1.0
+}
 ```
 
 ## Execution Model
@@ -102,26 +148,28 @@ The `experiment.name` comes from `task.yaml` (e.g. `a100_uniopbench_v1`). Each r
 
 ```text
 <experiment.name>/runs/<run_id>/
-  run_metadata.yaml
   run_summary.json
   console.log
   operators/
     activation__relu/
-      metadata.yaml
       prompt/
         system.txt
         user.txt
       rounds/
-        round_0/
-          agent_session.log
-          agent.log
+        round_0/              # run subcommand: round_0, round_1, ...
+          agent.log           # optimize subcommand: round_1, round_2, ...
+          trajectory.log
           request.json
           response.json
           extracted_kernel.cu
-          compile.log
           verify.log
           perf.log
           variants.log
+      versions/               # optimize only
+        manifest.json
+        v0_baseline.cu
+        v1_initial.cu / v1_opt.cu
+        v2_opt.cu
       artifact/
         ...
       result.json
