@@ -1,9 +1,0 @@
-
-================================================================================
-Testing RmsNorm operator with CUDA backend (single test mode)
-Shape: (N=4096, K=512), Mode: 6, Dtype: torch.float16
-================================================================================
-
-Loading CUDA kernel...
-✅ CUDA kernel is up to date
-✓ CUDA kernel loaded

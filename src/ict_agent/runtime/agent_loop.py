@@ -1529,4 +1529,3 @@ def chat(
         reader_stop_event.set()
         reader_thread.join(timeout=1.0)
     return None
-
