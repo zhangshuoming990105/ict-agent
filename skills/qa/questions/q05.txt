@@ -1,1 +1,0 @@
-How many vowels in the word hello? Reply with one number.

@@ -1,8 +1,0 @@
-
-================================================================================
-Testing Square with CUDA backend (single test mode)
-Shape: (256,), Elements: 256
-Dtype: torch.float32
-================================================================================
-
-✅ CUDA kernel is up to date

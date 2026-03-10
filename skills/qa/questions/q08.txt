@@ -1,1 +1,0 @@
-How many letters in the word python? One number.
