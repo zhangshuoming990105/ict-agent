@@ -460,6 +460,13 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     run_root = Path(args.run_root).resolve() if args.run_root else find_latest_run(repo_root)
 
+    # Ensure optest (from UniOpBench submodule) is on PYTHONPATH for artifact tests
+    uniopbench_root = repo_root / "benchmarks" / "UniOpBench"
+    if uniopbench_root.exists():
+        extra_pythonpath = [str(uniopbench_root)] + list(args.extra_pythonpath)
+    else:
+        extra_pythonpath = list(args.extra_pythonpath)
+
     artifacts = sorted(path.parent for path in run_root.glob("operators/*/artifact/test.py"))
     if args.match:
         artifacts = [path for path in artifacts if args.match in str(path)]
@@ -485,7 +492,7 @@ def main() -> int:
             python_exec=args.python,
             backend=args.backend,
             timeout=args.timeout,
-            extra_pythonpath=args.extra_pythonpath,
+            extra_pythonpath=extra_pythonpath,
         )
         results.append(result)
         perf = result["performance"]
