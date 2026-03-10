@@ -1,0 +1,9 @@
+
+================================================================================
+Testing Histogram operator with CUDA backend (single test mode)
+Shape: (4096,)
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

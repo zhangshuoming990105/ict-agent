@@ -1,0 +1,11 @@
+
+================================================================================
+Testing MinPool operator with CUDA backend
+Input: (4, 35, 35, 192) [NHWC]
+Output: (4, 11, 11, 192)
+Kernel: 5, Stride: 3
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

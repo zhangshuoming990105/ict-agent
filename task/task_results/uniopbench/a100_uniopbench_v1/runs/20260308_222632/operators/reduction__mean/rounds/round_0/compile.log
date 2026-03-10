@@ -1,0 +1,9 @@
+
+================================================================================
+Testing Mean operator with CUDA backend
+Input shape: (1, 64), Output shape: (64,)
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

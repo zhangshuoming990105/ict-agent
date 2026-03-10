@@ -1,0 +1,9 @@
+
+================================================================================
+Testing Min operator with CUDA backend
+Input shape: (4, 64, 64), Output shape: (64, 64)
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

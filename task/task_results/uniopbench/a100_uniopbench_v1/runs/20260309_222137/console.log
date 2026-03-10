@@ -1,0 +1,6 @@
+Run ID: 20260309_222137
+Config: /data/yuqiuchu/Project/ict-agent/task/uniopbench/task.yaml
+Benchmark root: /data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench
+[pass] activation/relu in round 0
+
+Success rate: 1/1

@@ -1,0 +1,67 @@
+dtypes:
+  - float32
+
+shapes:
+  # === Shape: [4096, 256] ===
+  - shape: [4096, 256]
+    op_levels: 0
+  - shape: [4096, 256]
+    op_levels: 1
+  - shape: [4096, 256]
+    op_levels: 2
+  - shape: [4096, 256]
+    op_levels: 3
+  - shape: [4096, 256]
+    op_levels: 4
+  - shape: [4096, 256]
+    op_levels: 5
+  - shape: [4096, 256]
+    op_levels: 6
+  - shape: [4096, 256]
+    op_levels: 7
+  - shape: [4096, 256]
+    op_levels: 8
+
+  # === Shape: [4096, 1024] ===
+  - shape: [4096, 1024]
+    op_levels: 0
+  - shape: [4096, 1024]
+    op_levels: 1
+  - shape: [4096, 1024]
+    op_levels: 2
+  - shape: [4096, 1024]
+    op_levels: 3
+  - shape: [4096, 1024]
+    op_levels: 4
+  - shape: [4096, 1024]
+    op_levels: 5
+  - shape: [4096, 1024]
+    op_levels: 6
+  - shape: [4096, 1024]
+    op_levels: 7
+  - shape: [4096, 1024]
+    op_levels: 8
+
+  # === Shape: [4096, 4096] ===
+  - shape: [4096, 4096]
+    op_levels: 0
+  - shape: [4096, 4096]
+    op_levels: 1
+  - shape: [4096, 4096]
+    op_levels: 2
+  - shape: [4096, 4096]
+    op_levels: 3
+  - shape: [4096, 4096]
+    op_levels: 4
+  - shape: [4096, 4096]
+    op_levels: 5
+  - shape: [4096, 4096]
+    op_levels: 6
+  - shape: [4096, 4096]
+    op_levels: 7
+  - shape: [4096, 4096]
+    op_levels: 8
+
+  # === Shape: [4096, 8192] (仅测试 Pack8 F16) ===
+  - shape: [4096, 8192]
+    op_levels: 6

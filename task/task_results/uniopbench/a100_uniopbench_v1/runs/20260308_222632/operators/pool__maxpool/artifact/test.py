@@ -59,11 +59,11 @@ testcase = TestCase(
         ),
     ],
     scalar_specs=[
+        ScalarSpec("kernel_size", int, lambda p: p.kernel_size),
+        ScalarSpec("stride", int, lambda p: p.stride),
         ScalarSpec("batch_size", int, lambda p: p.batch_size),
         ScalarSpec("channels", int, lambda p: p.channels),
         ScalarSpec("input_H", int, lambda p: p.height),
-        ScalarSpec("kernel_size", int, lambda p: p.kernel_size),
-        ScalarSpec("stride", int, lambda p: p.stride),
     ],
     torch_kernel=torch_kernel,
 )

@@ -521,8 +521,9 @@ def run_uniopbench_task(args) -> int:
 
         for operator in task_config.operators:
             operator_key = safe_operator_name(operator)
-            if args.resume and summary.get("operators", {}).get(operator_key, {}).get("status") == "passed":
-                logger.log(f"[skip] {operator}: already passed")
+            if args.resume and operator_key in summary.get("operators", {}):
+                status = summary["operators"][operator_key].get("status", "unknown")
+                logger.log(f"[skip] {operator}: already recorded (status={status})")
                 continue
 
             source_dir = operator_source_dir(operator)

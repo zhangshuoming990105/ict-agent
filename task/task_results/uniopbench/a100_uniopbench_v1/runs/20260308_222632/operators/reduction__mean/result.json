@@ -1,0 +1,46 @@
+{
+  "operator": "reduction/mean",
+  "operator_key": "reduction__mean",
+  "status": "passed",
+  "rounds_attempted": 1,
+  "agent_steps_per_round": [
+    19
+  ],
+  "agent_steps_total": 19,
+  "tokens": {
+    "prompt_tokens": 188991,
+    "completion_tokens": 4420,
+    "total_tokens": 193411,
+    "rounds": [
+      {
+        "prompt_tokens": 188991,
+        "completion_tokens": 4420,
+        "total_tokens": 193411,
+        "cache_read_tokens": 150975,
+        "cache_write_tokens": 37919
+      }
+    ]
+  },
+  "compile_only": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__mean/rounds/round_0/compile.log"
+  },
+  "verify": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__mean/rounds/round_0/verify.log"
+  },
+  "perf": {
+    "passed": true,
+    "log": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__mean/rounds/round_0/perf.log"
+  },
+  "variants": {
+    "executed": false,
+    "passed": null,
+    "log": ""
+  },
+  "final_kernel": "artifact/cuda_/kernel.cu",
+  "errors": [],
+  "source_dir": "/data/yuqiuchu/Project/ict-agent/benchmarks/UniOpBench/operators/reduction/mean",
+  "artifact_dir": "/data/yuqiuchu/Project/ict-agent/task/task_results/uniopbench/a100_uniopbench_v1/runs/20260308_222632/operators/reduction__mean/artifact",
+  "supports_variants": false
+}

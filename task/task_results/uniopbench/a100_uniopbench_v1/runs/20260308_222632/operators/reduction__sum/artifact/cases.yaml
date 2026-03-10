@@ -1,0 +1,53 @@
+dtypes:
+  - float32
+
+shapes:
+  # === F32 ===
+  - shape: [4096]
+    op_levels: 0 # f32_f32
+  - shape: [4096]
+    op_levels: 1 # f32x4_f32
+
+  # === F16 ===
+  - shape: [4096]
+    op_levels: 2 # f16_f16
+  - shape: [4096]
+    op_levels: 3 # f16_f32
+  - shape: [4096]
+    op_levels: 4 # f16x2_f16
+  - shape: [4096]
+    op_levels: 5 # f16x2_f32
+  - shape: [4096]
+    op_levels: 6 # f16x8_pack_f16
+  - shape: [4096]
+    op_levels: 7 # f16x8_pack_f32
+
+  # === BF16 ===
+  - shape: [4096]
+    op_levels: 8 # bf16_bf16
+  - shape: [4096]
+    op_levels: 9 # bf16_f32
+  - shape: [4096]
+    op_levels: 10 # bf16x2_bf16
+  - shape: [4096]
+    op_levels: 11 # bf16x2_f32
+  - shape: [4096]
+    op_levels: 12 # bf16x8_pack_bf16
+  - shape: [4096]
+    op_levels: 13 # bf16x8_pack_f32
+
+  # === FP8 ===
+  - shape: [4096]
+    op_levels: 14 # fp8_e4m3_f16
+  - shape: [4096]
+    op_levels: 15 # fp8_e4m3x16_pack_f16
+  - shape: [4096]
+    op_levels: 16 # fp8_e5m2_f16
+  - shape: [4096]
+    op_levels: 17 # fp8_e5m2x16_pack_f16
+
+  # === INT8 ===
+  - shape: [4096]
+    op_levels: 18 # i8_i32
+  - shape: [4096]
+    op_levels: 19 # i8x16_pack_i32

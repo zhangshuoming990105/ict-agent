@@ -1,0 +1,11 @@
+
+================================================================================
+Testing MaxPool operator with CUDA backend
+Input: (4, 64, 8, 8)
+Output: (4, 64, 2, 2)
+Kernel: 5, Stride: 3
+================================================================================
+
+Loading CUDA kernel...
+✅ CUDA kernel is up to date
+✓ CUDA kernel loaded

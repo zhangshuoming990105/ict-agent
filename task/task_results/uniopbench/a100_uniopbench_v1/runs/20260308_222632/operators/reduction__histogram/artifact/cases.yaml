@@ -1,0 +1,12 @@
+dtypes:
+  - int32
+
+shapes:
+  - shape: [10000]
+    op_levels: 0 # i32
+  - shape: [10000]
+    op_levels: 1 # i32x4
+  - shape: [65536]
+    op_levels: 0
+  - shape: [65536]
+    op_levels: 1
