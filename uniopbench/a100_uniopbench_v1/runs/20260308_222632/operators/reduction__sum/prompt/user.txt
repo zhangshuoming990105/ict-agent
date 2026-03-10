@@ -4,8 +4,8 @@ Read the workspace files, update cuda_/kernel.cu, and validate your changes with
 python test.py --compile-only
 python test.py --no-perf
 python test.py
-If variants are supported: python test.py --variants yaml --no-perf
-Work autonomously in this turn. When compile and correctness pass, reply with a short summary.
+python test.py --variants yaml --no-perf
+Work autonomously in this turn. When compile and correctness pass (STATUS: PASSED), run `python test.py` once for perf, then STOP and reply with a short summary. Do NOT keep optimizing after correctness passes.
 
 ## File: test.py
 ```py
