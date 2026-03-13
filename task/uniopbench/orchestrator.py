@@ -101,6 +101,11 @@ class ExperimentConfig:
     enable_torch_compile_baseline: bool = True
     task_template: str = ""      # relative path from repo root; overrides TASK.md
     optimize_template: str = ""  # relative path from repo root; overrides OPTIMIZE_TASK.md
+    # vllm serve (local OpenAI-compatible endpoint) configuration.
+    # These are written to env vars before creating the client, so they
+    # override the VLLM_BASE_URL / VLLM_API_KEY environment variables.
+    vllm_base_url: str = ""      # e.g. "http://localhost:8000/v1"
+    vllm_api_key: str = ""       # optional; vllm doesn't require auth by default
 
 
 @dataclass
@@ -202,6 +207,8 @@ def load_task_config(config_path: Path, operators_override: list[str] | None = N
             ),
             task_template=str(experiment_raw.get("task_template") or ""),
             optimize_template=str(experiment_raw.get("optimize_template") or ""),
+            vllm_base_url=str(experiment_raw.get("vllm_base_url") or ""),
+            vllm_api_key=str(experiment_raw.get("vllm_api_key") or ""),
         ),
         operators=normalized_operators,
         prompt=PromptConfig(**(raw.get("prompt") or {})),
@@ -380,6 +387,14 @@ def run_agent_round(
     user_prompt: str,
     no_truncate: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    # Propagate vllm config from task.yaml to env vars before creating client.
+    # This allows task.yaml to fully specify the vllm endpoint without requiring
+    # the user to export env vars separately.
+    if task_config.experiment.vllm_base_url:
+        os.environ["VLLM_BASE_URL"] = task_config.experiment.vllm_base_url
+    if task_config.experiment.vllm_api_key:
+        os.environ["VLLM_API_KEY"] = task_config.experiment.vllm_api_key
+
     client, provider_name, default_model, base_url = load_client(task_config.experiment.provider)
     model_name = task_config.experiment.model or default_model
     from ict_agent.app.bootstrap import create_command_registry, create_domain_adapter, create_logger

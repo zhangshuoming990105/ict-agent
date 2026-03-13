@@ -1,8 +1,14 @@
 experiment:
   name: a100_uniopbench_v1
   model: mcs-1
+  # provider: auto          # auto | ksyun | infini | vllm
   cuda_arch: sm_80
   enable_torch_compile_baseline: false
+  # --- vllm serve (local model) example ---
+  # provider: vllm
+  # model: glm5             # model name served by vllm
+  # vllm_base_url: "http://localhost:8000/v1"
+  # vllm_api_key: ""        # optional; vllm doesn't require auth by default
 
 operators:
   # Use `- all` to run every UniOpBench operator.

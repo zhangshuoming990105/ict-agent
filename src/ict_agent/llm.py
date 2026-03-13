@@ -20,7 +20,8 @@ from typing import Any
 KSYUN_OPENAI_BASE_URL = "https://kspmas.ksyun.com/v1/"
 KSYUN_ANTHROPIC_BASE_URL = "https://kspmas.ksyun.com"
 INFINI_BASE_URL = "https://cloud.infini-ai.com/maas/v1"
-SUPPORTED_PROVIDERS = ("auto", "ksyun", "infini")
+VLLM_DEFAULT_BASE_URL = "http://localhost:8000/v1"
+SUPPORTED_PROVIDERS = ("auto", "ksyun", "infini", "vllm")
 
 # Models that use the Anthropic Messages API (with prompt caching support).
 # All other models use the OpenAI Chat Completions API.
@@ -37,6 +38,9 @@ def get_provider_help_text() -> str:
         "    Claude models (mco-4, mcs-1, mch-1): Anthropic Messages API with prompt caching\n"
         "    Other models (gpt-oss-120b, etc.): OpenAI Chat Completions API\n"
         "  - infini (default model: deepseek-v3, env: INFINI_API_KEY)\n"
+        "  - vllm   (local vllm serve, env: VLLM_BASE_URL, VLLM_API_KEY optional)\n"
+        "    OpenAI-compatible API at localhost (default: http://localhost:8000/v1)\n"
+        "    Model name defaults to VLLM_MODEL or 'default'\n"
         "  - auto   (prefer ksyun, fall back to infini)"
     )
 
@@ -129,7 +133,9 @@ class ModelRouter:
     def _get_openai(self) -> Any:
         if self._openai_client is None:
             OpenAI = _import_openai()
-            if self.provider in ("ksyun", "auto"):
+            if self.provider == "vllm":
+                base_url = os.getenv("VLLM_BASE_URL", VLLM_DEFAULT_BASE_URL)
+            elif self.provider in ("ksyun", "auto"):
                 base_url = os.getenv("KSYUN_BASE_URL", KSYUN_OPENAI_BASE_URL)
             elif self.provider == "infini":
                 base_url = os.getenv("INFINI_BASE_URL", INFINI_BASE_URL)
@@ -143,6 +149,8 @@ class ModelRouter:
         """Base URL for the default model's client (for display purposes)."""
         if self.default_model in ANTHROPIC_MODELS:
             return os.getenv("KSYUN_ANTHROPIC_BASE_URL", KSYUN_ANTHROPIC_BASE_URL)
+        if self.provider == "vllm":
+            return os.getenv("VLLM_BASE_URL", VLLM_DEFAULT_BASE_URL)
         if self.provider == "infini":
             return os.getenv("INFINI_BASE_URL", INFINI_BASE_URL)
         return os.getenv("KSYUN_BASE_URL", KSYUN_OPENAI_BASE_URL)
@@ -189,6 +197,15 @@ def create_client(provider: str = "ksyun") -> tuple[Any, str, str, str]:
             print("Error: provider 'infini' selected but INFINI_API_KEY is not set.")
             sys.exit(1)
 
+    if provider == "vllm":
+        # vllm serve exposes an OpenAI-compatible API on localhost.
+        # VLLM_API_KEY is optional (vllm doesn't require auth by default).
+        base_url = os.getenv("VLLM_BASE_URL", VLLM_DEFAULT_BASE_URL)
+        api_key = os.getenv("VLLM_API_KEY", "EMPTY")
+        default_model = os.getenv("VLLM_MODEL", "default")
+        router = ModelRouter("vllm", api_key, default_model)
+        return router, "vllm", default_model, base_url
+
     print("Error: no usable provider credentials found.")
     print(get_provider_help_text())
     sys.exit(1)
@@ -218,6 +235,10 @@ def create_openai_client_for_model(provider: str, model: str) -> tuple[Any, str]
         if api_key := os.getenv("INFINI_API_KEY"):
             base_url = os.getenv("INFINI_BASE_URL", INFINI_BASE_URL)
             return OpenAI(api_key=api_key, base_url=base_url), base_url
+    if provider == "vllm":
+        base_url = os.getenv("VLLM_BASE_URL", VLLM_DEFAULT_BASE_URL)
+        api_key = os.getenv("VLLM_API_KEY", "EMPTY")
+        return OpenAI(api_key=api_key, base_url=base_url), base_url
     raise RuntimeError(f"No credentials for provider '{provider}'")
 
 

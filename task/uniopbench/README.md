@@ -27,6 +27,47 @@ It does not modify the upstream UniOpBench source tree. Instead, it:
 - `prompt`: optional extra prompt fragments
 - `runtime`: run-level behavior such as fail-fast and temp-build cleanup
 
+### Provider selection
+
+The `provider` field selects the LLM backend:
+
+| Provider | Default model | API key env var | Notes |
+|----------|--------------|-----------------|-------|
+| `auto` (default) | `mco-4` | `KSYUN_API_KEY` | Tries ksyun, then infini |
+| `ksyun` | `mco-4` | `KSYUN_API_KEY` | Claude + OpenAI-compat models |
+| `infini` | `deepseek-v3` | `INFINI_API_KEY` | Infini cloud |
+| `vllm` | env `VLLM_MODEL` or `default` | `VLLM_API_KEY` (optional) | Local vllm serve endpoint |
+
+### Using a local vllm serve model
+
+To use a model served locally via `vllm serve` (e.g. GLM-5, Qwen, etc.):
+
+1. Start vllm:
+   ```bash
+   python -m vllm.entrypoints.openai.api_server \
+       --model THUDM/glm-4-9b-chat --port 8000
+   ```
+
+2. Configure `task.yaml`:
+   ```yaml
+   experiment:
+     provider: vllm
+     model: glm5                           # must match the model name in vllm serve
+     vllm_base_url: "http://localhost:8000/v1"
+     # vllm_api_key: ""                    # only if vllm was started with --api-key
+   ```
+
+   Or set via environment variables instead of `task.yaml`:
+   ```bash
+   export VLLM_BASE_URL="http://localhost:8000/v1"
+   export VLLM_MODEL="glm5"
+   # export VLLM_API_KEY="..."             # only if needed
+   ```
+
+See [task_vllm_example.yaml](task_vllm_example.yaml) for a complete example config.
+
+### Standard example
+
 Example:
 
 ```yaml
