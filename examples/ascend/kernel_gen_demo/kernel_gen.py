@@ -27,13 +27,15 @@ import subprocess
 import sys
 import textwrap
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import anthropic
 
 # ─── 路径配置 ────────────────────────────────────────────────────────────────
-HELPER_HPP = Path("/workspace/dev/ascend-templates/cpp_extension/pytorch_npu_helper.hpp")
+BASE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BASE_DIR.parents[2]
+HELPER_HPP = REPO_ROOT / "template/ascend/cpp_extension/pytorch_npu_helper.hpp"
 CANN_PATH = os.getenv("ASCEND_HOME_PATH", "/usr/local/Ascend/cann-8.5.0")
 
 
@@ -56,7 +58,7 @@ class Attempt:
 
 
 # ─── LLM 调用 ───────────────────────────────────────────────────────────────
-SKILLS_DIR = Path("/workspace/dev/kernel_gen_demo/skills")
+SKILLS_DIR = BASE_DIR / "skills"
 
 
 def create_client() -> anthropic.Anthropic:
@@ -360,7 +362,7 @@ def main():
     ref_code = ref_path.read_text()
     ref_name = ref_path.stem  # e.g. "22_Tanh"
 
-    work_dir = Path(args.work_dir) if args.work_dir else Path(f"/workspace/dev/kernel_gen_demo/{ref_name}")
+    work_dir = Path(args.work_dir) if args.work_dir else (BASE_DIR / ref_name)
     work_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"=== EvoKernel-lite ===")

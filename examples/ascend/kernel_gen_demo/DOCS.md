@@ -69,13 +69,15 @@ LLM 收到的 system prompt = Header + L0 + L1 + L2。
 ### 3.1 配置与数据结构
 
 ```python
-HELPER_HPP = Path("/workspace/dev/ascend-templates/cpp_extension/pytorch_npu_helper.hpp")
+BASE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BASE_DIR.parents[2]
+HELPER_HPP = REPO_ROOT / "template/ascend/cpp_extension/pytorch_npu_helper.hpp"
 ```
 
 `pytorch_npu_helper.hpp` 是来自 `ascend/samples` 官方仓库的辅助头文件，提供 `EXEC_NPU_CMD` 宏。
 
 ```python
-SKILLS_DIR = Path("/workspace/dev/kernel_gen_demo/skills")
+SKILLS_DIR = BASE_DIR / "skills"
 ```
 
 Skills 文件目录，包含 L0-L2 三个 markdown 文件。
@@ -223,7 +225,7 @@ def main():
 ## 4. 运行示例
 
 ```bash
-cd /workspace/dev/kernel_gen_demo
+cd /workspace/dev/ict-agent/examples/ascend/kernel_gen_demo
 
 # 简单 elementwise（1 轮通过）
 python3 kernel_gen.py --ref .../22_Tanh.py --device 4

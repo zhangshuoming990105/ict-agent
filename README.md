@@ -50,6 +50,8 @@ ict-agent/
 │   ├── compactor.py         # context compaction
 │   └── llm.py               # provider abstraction
 ├── skills/                  # skill definitions (SKILL.md)
+├── examples/                # runnable demos and reference workflows
+├── template/                # reusable code templates
 ├── tests/                   # unit + mock + real API tests
 ├── scripts/                 # live session management + e2e tests
 └── docs/                    # detailed documentation

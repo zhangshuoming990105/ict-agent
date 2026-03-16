@@ -58,6 +58,6 @@ Apply this skill when requests mention Ascend C, CANN, custom op, tiling, 910B, 
 - Elementwise kernel patterns: [elementwise-kernel.md](elementwise-kernel.md)
 - Two-input add example: [example-add.md](example-add.md)
 - Source prompt assets in repo:
-  - `dev/kernel_gen_demo/skills/L0_project_structure.md`
-  - `dev/kernel_gen_demo/skills/L1_elementwise_kernel.md`
-  - `dev/kernel_gen_demo/skills/L2_example_add.md`
+  - `examples/ascend/kernel_gen_demo/skills/L0_project_structure.md`
+  - `examples/ascend/kernel_gen_demo/skills/L1_elementwise_kernel.md`
+  - `examples/ascend/kernel_gen_demo/skills/L2_example_add.md`
