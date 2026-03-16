@@ -38,6 +38,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Disable truncation in agent output (full system prompt, full tool results)",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume a prior run id",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -57,11 +62,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Create prompts and run layout without calling the LLM",
-    )
-    run_parser.add_argument(
-        "--resume",
-        action="store_true",
-        help="Resume a prior run id",
     )
 
     # --- optimize ---
@@ -155,14 +155,13 @@ def run(argv: list[str] | None = None) -> int:
     args, _ = parser.parse_known_args(normalized)
     orchestrator = _load_orchestrator()
 
-    if args.subcommand == "optimize":
-        if not hasattr(args, "dry_run"):
-            args.dry_run = False
-        return orchestrator.run_optimize_task(args)
-
-    # 'run' subcommand
     if not hasattr(args, "dry_run"):
         args.dry_run = False
     if not hasattr(args, "resume"):
         args.resume = False
+
+    if args.subcommand == "optimize":
+        return orchestrator.run_optimize_task(args)
+
+    # 'run' subcommand
     return orchestrator.run_uniopbench_task(args)

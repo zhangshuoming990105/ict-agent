@@ -1112,11 +1112,13 @@ def run_optimize_task(args) -> int:
 
     run_id = args.run_id or timestamp_run_id()
     run_dir = runs_root(task_config.experiment.name) / run_id
+    if run_dir.exists() and not args.resume:
+        raise FileExistsError(f"Run already exists: {run_dir}")
     run_dir.mkdir(parents=True, exist_ok=True)
 
     logger = Logger(run_dir / "console.log")
     try:
-        summary: dict[str, Any] = {"operators": {}}
+        summary = load_existing_summary(run_dir) if args.resume else {"operators": {}}
 
         logger.log(f"Optimize run: {run_id}")
         logger.log(f"Rounds: {max_rounds}, Max versioning: {max_version}, Target speedup: {target_speedup}x")
@@ -1125,6 +1127,11 @@ def run_optimize_task(args) -> int:
 
         for operator in task_config.operators:
             operator_key = safe_operator_name(operator)
+            if args.resume and operator_key in summary.get("operators", {}):
+                status = summary["operators"][operator_key].get("status", "unknown")
+                logger.log(f"[skip] {operator}: already recorded (status={status})")
+                continue
+
             source_dir = operator_scaffold_dir(operator)
             has_variants = supports_variants(source_dir / "test.py")
 

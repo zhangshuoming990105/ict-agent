@@ -129,6 +129,9 @@ ict-agent --task uniopbench --operators norm/rmsnorm optimize --rounds 5 --max-v
 
 # Dry run to inspect prompts without calling the LLM
 ict-agent --task uniopbench --operators norm/rmsnorm optimize --rounds 2 --dry-run
+
+# Resume a prior optimize run id and skip operators already recorded in run_summary.json
+ict-agent --task uniopbench --operators norm/rmsnorm optimize --resume --run-id my_opt_run
 ```
 
 ### Optimize flow
