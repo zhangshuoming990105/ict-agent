@@ -18,3 +18,7 @@ cuda_extension.so
 output.txt
 .openclaw/
 task/task_results/
+dev/kernel_gen_demo/**/build/
+dev/kernel_gen_demo/**/build_out/
+dev/kernel_gen_demo/**/round_*/
+dev/kernel_gen_demo/**/summary.json
